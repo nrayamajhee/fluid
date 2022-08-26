@@ -39,7 +39,13 @@ const [count, setCount] = createSignal(0);
 //}, 2000);
 
 createEffect(() => {
-  console.log(count());
+  console.log("1", count());
+});
+createEffect(() => {
+  console.log("MID");
+});
+createEffect(() => {
+  console.log("2", count());
 });
 
 setCount(1);

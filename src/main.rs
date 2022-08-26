@@ -8,13 +8,16 @@ fn main() {
     {
         let a = a.clone();
         ctx.create_effect(move || {
-            println!("Effect One: {}", a.get());
+            println!("Effect 1: {}", a.get());
         });
     }
+    ctx.create_effect(move || {
+        println!("Effect Mid");
+    });
     {
         let a = a.clone();
         ctx.create_effect(move || {
-            println!("Effect Two: {}", a.get());
+            println!("Effect 2: {}", a.get());
         });
     }
     a.set("Hi");

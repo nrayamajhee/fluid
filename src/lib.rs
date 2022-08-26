@@ -9,8 +9,10 @@ pub struct Signal<T> {
 
 impl<T> Signal<T> {
     pub fn get(&self) -> Ref<'_, T> {
-        if let Some(sub) = self.context.borrow_mut().pop() {
-            self.subscribers.borrow_mut().push(sub.clone());
+        if let Some(sub) = self.context.borrow().last() {
+            if let Ok(mut subscribers) = self.subscribers.try_borrow_mut() {
+                subscribers.push(sub.clone());
+            }
         }
         self.inner.borrow()
     }
