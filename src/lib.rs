@@ -1,58 +1,47 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
-
-use std::collections::HashSet;
-
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
+pub struct Signal<T> {
+    inner: RefCell<T>,
+    subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
+    context: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
+}
+
+impl<T> Signal<T> {
+    pub fn get(&self) -> Ref<'_, T> {
+        if let Some(sub) = self.context.borrow_mut().pop() {
+            self.subscribers.borrow_mut().push(sub.clone());
+        }
+        self.inner.borrow()
+    }
+    pub fn set(&self, value: T) {
+        *self.inner.borrow_mut() = value;
+        for sub in self.subscribers.borrow().iter() {
+            sub();
+        }
+    }
+}
+
 pub struct Context {
-    subscriptions: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
+    observers: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
-            subscriptions: Rc::new(RefCell::new(Vec::new())),
+            observers: Rc::new(RefCell::new(Vec::new())),
         }
     }
-    pub fn create_signal<T: Clone>(&self, value: T) -> (impl Fn() -> T, impl Fn(T)) {
-        let state_subscriptions: Rc<RefCell<Vec<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(Vec::new()));
-        let inner = Rc::new(RefCell::new(value));
-        let i = inner.clone();
-        let c_s = self.subscriptions.clone();
-        let s_s = state_subscriptions.clone();
-        let read = move || {
-            if let Some(sub) = c_s.borrow_mut().pop() {
-                s_s.borrow_mut().push(sub);
-            }
-            // Removing this clone and returning i.borrow() was a lifetime nightmare
-            // Please help!
-            i.borrow().clone()
-        };
-        let write = move |new_val| {
-            *inner.borrow_mut() = new_val;
-            for sub in state_subscriptions.borrow().iter() {
-                sub();
-            }
-        };
-        (read, write)
+    pub fn create_signal<T>(&self, value: T) -> Signal<T> {
+        Signal {
+            inner: RefCell::new(value),
+            subscribers: RefCell::new(Vec::new()),
+            context: self.observers.clone(),
+        }
     }
-    pub fn create_effect(&mut self, closure: impl Fn() + 'static) {
+    pub fn create_effect(&self, closure: impl Fn() + 'static) {
         let closure = Rc::new(closure);
-        self.subscriptions.borrow_mut().push(closure.clone());
+        self.observers.borrow_mut().push(closure.clone());
         closure();
     }
 }
