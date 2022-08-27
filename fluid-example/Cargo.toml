@@ -1,0 +1,42 @@
+[package]
+name = "fluid-example"
+version = "0.1.0"
+authors = ["nrayamajhee <nishan@rayamajhee.com>"]
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies.web-sys]
+version = "0.3.45"
+features = [
+	"DedicatedWorkerGlobalScope",
+	"ErrorEvent",
+	"Event",
+	"Navigator",
+  "Worker",
+  "MessageEvent",
+	"Window",
+	"Document",
+	"Element",
+	"HtmlElement",
+]
+
+[dependencies]
+wasm-bindgen = "0.2.82"
+wasm-bindgen-futures = "0.4.32"
+js-sys = "0.3.59"
+console_error_panic_hook = "0.1.7"
+wee_alloc = "0.4.5"
+rayon = "1.5.3"
+console_log = { version = "0.2.0", features = ["color"] }
+log = "0.4.17"
+fluid = { path = "../fluid" }
+fluid-macro = { path = "../fluid-macro" }
+maud = "0.23.0"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.32"
+
+[profile.release]
+opt-level = "s"

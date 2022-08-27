@@ -1,0 +1,14 @@
+[package]
+name = "fluid-macro"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+maud = "0.23.0"
+quote = "1.0.21"
+syn = "1.0.99"
+fluid = { path = "../fluid" }
+
