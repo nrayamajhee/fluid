@@ -4,11 +4,15 @@ use quote::quote;
 use std::collections::HashMap;
 use syn::{braced, parse_macro_input};
 
-struct Node {
+enum Node {
+  Text(String),
+  Element(Element),
+}
+
+struct Element {
   pub name: String,
-  // text: String,
   attributes: HashMap<String, String>,
-  // children: Vec<Box<Node>>,
+  children: Vec<Box<Node>>,
 }
 
 use syn::{
@@ -19,6 +23,11 @@ use syn::{
 
 impl Parse for Node {
   fn parse(input: ParseStream) -> Result<Self> {
+    let lookahead = input.lookahead1();
+    if lookahead.peek(LitStr) {
+      let lit: LitStr = input.parse()?;
+      return Ok(Node::Text(lit.value()));
+    }
     let ident: Ident = input.parse()?;
     let name = ident.to_string();
     let mut children: Vec<Box<Node>> = Vec::new();
@@ -36,50 +45,70 @@ impl Parse for Node {
       if !lookahead.peek(LitStr) {
         lookahead.error();
       }
-      let value: LitStr = input.parse()?;
-      let value = value.value();
+      let lit: LitStr = input.parse()?;
+      let value = lit.value();
       attributes.insert(attribute, value);
       let lookahead = input.lookahead1();
       if lookahead.peek(Brace) {
         break;
       }
     }
-    // let mut text = String::new();
     let content;
     let _: Brace = braced!(content in input);
-    if !content.is_empty() {
-      let lookahead = content.lookahead1();
-      if lookahead.peek(LitStr) {
-        let _: LitStr = content.parse()?;
-        // text = lit.value();
-      } else {
-        let child: Node = content.parse()?;
-        children.push(Box::new(child));
-      }
+    while !content.is_empty() {
+      let child: Node = content.parse()?;
+      children.push(Box::new(child));
     }
-    Ok(Node {
+    Ok(Node::Element(Element {
       name,
       attributes,
-      // children,
-      // text,
-    })
+      children,
+    }))
+  }
+}
+
+use proc_macro2::TokenStream as TS;
+
+fn build_node(node: Node) -> TS {
+  match node {
+    Node::Text(text) => quote! {
+      {
+        fluid::document()?.create_text_node(#text)
+      }
+    },
+    Node::Element(el) => {
+      let name = el.name;
+      let mut attributes = Vec::new();
+      let mut children = Vec::new();
+      for (key, value) in el.attributes {
+        attributes.push(quote! {#key, #value});
+      }
+      for child in el.children {
+        let child_node = build_node(*child);
+        children.push(child_node);
+      }
+      quote! {
+          {
+            let el = fluid::create_element(#name)?;
+            #(el.set_attribute(#attributes)?;)*
+            #(
+                let child = #children;
+                el.append_child(&child)?;
+            )*
+            el
+          }
+      }
+    }
   }
 }
 
 #[proc_macro]
 pub fn html(item: TokenStream) -> TokenStream {
   let node = parse_macro_input!(item as Node);
-  let name = node.name;
-  let mut attributes = Vec::new();
-  for (key, value) in node.attributes {
-    attributes.push(quote! {#key, #value});
+  if let Node::Text(_) = node {
+    assert!(false, "Cannot build DOM tree with text node at the root");
+    "()".parse().unwrap()
+  } else {
+    build_node(node).into()
   }
-  quote! {
-      {
-        let el = fluid::create_element(#name)?;
-        #(el.set_attribute(#attributes)?;)*
-        el
-      }
-  }
-  .into()
 }

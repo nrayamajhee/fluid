@@ -11,4 +11,5 @@ maud = "0.23.0"
 quote = "1.0.21"
 syn = "1.0.99"
 fluid = { path = "../fluid" }
+proc-macro2 = "1.0.43"
 

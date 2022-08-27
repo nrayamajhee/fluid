@@ -14,5 +14,7 @@ version = "0.3.59"
 features = [
   "Window",
   "Document",
-  "Element"
+  "Element",
+  "Text",
+  "HtmlElement"
 ]
