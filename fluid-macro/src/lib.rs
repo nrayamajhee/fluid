@@ -1,10 +1,12 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
-use quote::quote;
+use proc_macro2::TokenStream as TokenStream2;
+use quote::{quote, ToTokens};
 use std::collections::HashMap;
-use syn::{braced, parse_macro_input};
+use syn::{braced, parenthesized, parse_macro_input, token::Paren};
 
 enum Node {
+  Expr(TokenStream2),
   Text(String),
   Element(Element),
 }
@@ -24,9 +26,28 @@ use syn::{
 impl Parse for Node {
   fn parse(input: ParseStream) -> Result<Self> {
     let lookahead = input.lookahead1();
+    // If it's { "Some String" }
+    // just return a text node
     if lookahead.peek(LitStr) {
       let lit: LitStr = input.parse()?;
       return Ok(Node::Text(lit.value()));
+    }
+    // If it's { (rust code) }
+    // eval the expression and return string
+    if lookahead.peek(Paren) {
+      let content;
+      parenthesized!(content in input);
+      let expr = content.cursor().token_stream();
+      while !content.is_empty() {
+        content.step(|cursor| {
+          if let Some((_, next)) = cursor.token_tree() {
+            return Ok(((), next));
+          } else {
+            return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+          }
+        })?;
+      }
+      return Ok(Node::Expr(expr));
     }
     let ident: Ident = input.parse()?;
     let name = ident.to_string();
@@ -54,7 +75,7 @@ impl Parse for Node {
       }
     }
     let content;
-    let _: Brace = braced!(content in input);
+    braced!(content in input);
     while !content.is_empty() {
       let child: Node = content.parse()?;
       children.push(Box::new(child));
@@ -71,6 +92,14 @@ use proc_macro2::TokenStream as TS;
 
 fn build_node(node: Node) -> TS {
   match node {
+    Node::Expr(expr) => {
+      let text = quote! {{ #expr }};
+      quote! {
+        {
+          fluid::document()?.create_text_node(#text)
+        }
+      }
+    }
     Node::Text(text) => quote! {
       {
         fluid::document()?.create_text_node(#text)

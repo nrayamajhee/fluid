@@ -1,37 +1,34 @@
-use fluid::{body, Context};
+use fluid::{body, document, Context};
 use fluid_macro::html;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
 
 pub async fn start() -> Result<(), JsValue> {
-  let p = html! {
-    p id="test" class="test" {
-      // (counter.get())
-      "Hello "
-      span { span { "World!" } }
-      br {}
-      "Hey "
-      span { "There!" }
-    }
-  };
-  let btn = html! {
-    button {}
-  };
-  btn.set_inner_html("+");
   let ctx = Context::new();
   let counter = ctx.create_signal(0);
+  let p = html! {
+    p id="test" class="test" {
+      "Counter is "
+      span id="counter" { (&counter.get().to_string()) }
+    }
+  };
   body()?.append_child(&p)?;
-  let p = html! { p {} };
-  body()?.append_child(&p)?;
+  let btn = html! {
+    button { "+" }
+  };
+  body()?.append_child(&btn)?;
   {
     let counter = counter.clone();
     let p = p.dyn_into::<HtmlElement>()?;
     ctx.create_effect(move || {
-      p.set_inner_text(counter.get().to_string().as_str());
+      document()
+        .unwrap()
+        .get_element_by_id("counter")
+        .unwrap()
+        .set_inner_html(counter.get().to_string().as_str());
     });
   }
-  body()?.append_child(&btn)?;
   {
     let counter = counter.clone();
     let cl = Closure::wrap(Box::new(move || {
