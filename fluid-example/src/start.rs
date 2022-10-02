@@ -1,8 +1,7 @@
-use fluid::{body, document, Context};
+use fluid::{body, document, js_closure, Context};
 use fluid_macro::html;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::HtmlElement;
 
 pub async fn start() -> Result<(), JsValue> {
   let ctx = Context::new();
@@ -20,7 +19,6 @@ pub async fn start() -> Result<(), JsValue> {
   body()?.append_child(&btn)?;
   {
     let counter = counter.clone();
-    let p = p.dyn_into::<HtmlElement>()?;
     ctx.create_effect(move || {
       document()
         .unwrap()
@@ -31,10 +29,10 @@ pub async fn start() -> Result<(), JsValue> {
   }
   {
     let counter = counter.clone();
-    let cl = Closure::wrap(Box::new(move || {
+    let cl = js_closure(move |_| {
       let new_val = *counter.get() + 1;
       counter.set(new_val);
-    }) as Box<dyn FnMut()>);
+    });
     btn.add_event_listener_with_callback("click", cl.as_ref().unchecked_ref())?;
     cl.forget();
   }
