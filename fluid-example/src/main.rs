@@ -3,30 +3,24 @@ use fluid_macro::html;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-pub async fn start() -> Result<(), JsValue> {
+pub async fn async_main() -> Result<(), JsValue> {
   let ctx = Context::new();
   let counter = ctx.create_signal(0);
-  let p = html! {
-    p id="test" class="test" {
-      "Counter is "
-      span id="counter" { (&counter.get().to_string()) }
-    }
-  };
-  body()?.append_child(&p)?;
+  {
+    let counter = counter.clone();
+    let p = html! {
+      p id="test" class="test" {
+        "Counter"
+        ( " is " )
+        [ctx, &counter.get().to_string()]
+      }
+    };
+    body()?.append_child(&p)?;
+  }
   let btn = html! {
     button { "+" }
   };
   body()?.append_child(&btn)?;
-  {
-    let counter = counter.clone();
-    ctx.create_effect(move || {
-      document()
-        .unwrap()
-        .get_element_by_id("counter")
-        .unwrap()
-        .set_inner_html(counter.get().to_string().as_str());
-    });
-  }
   {
     let counter = counter.clone();
     let cl = js_closure(move |_| {
@@ -37,4 +31,12 @@ pub async fn start() -> Result<(), JsValue> {
     cl.forget();
   }
   Ok(())
+}
+
+fn main() {
+  wasm_bindgen_futures::spawn_local(async move {
+    async_main().await.unwrap_or_else(|err| {
+      gloo_console::log!("Couldn't spawn async main", err);
+    })
+  })
 }

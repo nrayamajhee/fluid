@@ -7,9 +7,8 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-maud = "0.23.0"
-quote = "1.0.21"
-syn = "1.0.99"
+maud = "0.25.0"
+quote = "1.0.33"
+syn = "2.0.37"
 fluid = { path = "../fluid" }
-proc-macro2 = "1.0.43"
-
+proc-macro2 = "1.0.67"

@@ -1,10 +1,12 @@
 extern crate proc_macro;
+use fluid::Context;
 use proc_macro2::TokenStream as TokenStream2;
-use std::collections::HashMap;
-use syn::{braced, parenthesized, token::Paren};
+use quote::ToTokens;
+use std::{collections::HashMap, error::Error};
 use syn::{
+  braced, bracketed, parenthesized,
   parse::{Parse, ParseStream},
-  token::Brace,
+  token::{Brace, Bracket, Paren},
   Ident, LitStr, Result, Token,
 };
 
@@ -16,6 +18,7 @@ pub struct Element {
 
 pub enum Node {
   Expr(TokenStream2),
+  Effect((TokenStream2, TokenStream2)),
   Text(String),
   Element(Element),
 }
@@ -45,6 +48,27 @@ impl Parse for Node {
         })?;
       }
       return Ok(Node::Expr(expr));
+    }
+    // If it's { [ rust code ] }
+    // create effect node
+    if lookahead.peek(Bracket) {
+      let content;
+      bracketed!(content in input);
+      let expr = content.cursor().token_stream();
+      while !content.is_empty() {
+        content.step(|cursor| {
+          if let Some((_, next)) = cursor.token_tree() {
+            return Ok(((), next));
+          } else {
+            return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+          }
+        })?;
+      }
+      let ctx = expr.clone().into_iter().take(1).collect();
+      dbg!(&ctx);
+      let expr = expr.into_iter().skip(2).collect();
+      dbg!(&expr);
+      return Ok(Node::Effect((ctx, expr)));
     }
     // Parse ident and attributes
     let ident: Ident = input.parse()?;

@@ -7,12 +7,22 @@ use crate::ast::Node;
 pub fn build_node(node: Node) -> TS {
   match node {
     Node::Expr(expr) => {
-      let text = quote! {{ #expr }};
-      quote! {
-        {
+      let text = quote! { #expr };
+      quote! {{
           fluid::document()?.create_text_node(#text)
-        }
-      }
+      }}
+    }
+    Node::Effect((ctx, expr)) => {
+      let ctx = quote! { #ctx };
+      let inner = quote! { #expr };
+      quote! {{
+          let node = fluid::document()?.create_element("span")?;
+          let n = node.clone();
+          #ctx.create_effect(move || {
+            n.set_inner_html(#inner);
+          });
+          node
+      }}
     }
     Node::Text(text) => quote! {
       {
