@@ -10,15 +10,20 @@ use syn::{
   Ident, LitStr, Result, Token,
 };
 
+pub enum AttributeType {
+  Value(String),
+  Effect((TokenStream2, TokenStream2)),
+}
+
 pub struct Element {
   pub name: String,
-  pub attributes: HashMap<String, String>,
+  pub attributes: HashMap<String, AttributeType>,
   pub children: Vec<Box<Node>>,
 }
 
 pub enum Node {
   Expr(TokenStream2),
-  Effect((TokenStream2, TokenStream2)),
+  EffectDiv((TokenStream2, TokenStream2)),
   Text(String),
   Element(Element),
 }
@@ -50,7 +55,7 @@ impl Parse for Node {
       return Ok(Node::Expr(expr));
     }
     // If it's { [ rust code ] }
-    // create effect node
+    // return effect node
     if lookahead.peek(Bracket) {
       let content;
       bracketed!(content in input);
@@ -65,16 +70,14 @@ impl Parse for Node {
         })?;
       }
       let ctx = expr.clone().into_iter().take(1).collect();
-      dbg!(&ctx);
       let expr = expr.into_iter().skip(2).collect();
-      dbg!(&expr);
-      return Ok(Node::Effect((ctx, expr)));
+      return Ok(Node::EffectDiv((ctx, expr)));
     }
     // Parse ident and attributes
     let ident: Ident = input.parse()?;
     let name = ident.to_string();
     let mut children: Vec<Box<Node>> = Vec::new();
-    let mut attributes: HashMap<String, String> = HashMap::new();
+    let mut attributes: HashMap<String, AttributeType> = HashMap::new();
     let lookahead = input.lookahead1();
     while !lookahead.peek(Brace) {
       let ident: Ident = input.parse()?;
@@ -85,12 +88,29 @@ impl Parse for Node {
       }
       let _: Token![=] = input.parse()?;
       let lookahead = input.lookahead1();
-      if !lookahead.peek(LitStr) {
+      if lookahead.peek(Bracket) {
+        let content;
+        bracketed!(content in input);
+        let expr = content.cursor().token_stream();
+        while !content.is_empty() {
+          content.step(|cursor| {
+            if let Some((_, next)) = cursor.token_tree() {
+              return Ok(((), next));
+            } else {
+              return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+            }
+          })?;
+        }
+        let ctx = expr.clone().into_iter().take(1).collect();
+        let expr = expr.into_iter().skip(2).collect();
+        attributes.insert(attribute, AttributeType::Effect((ctx, expr)));
+      } else if lookahead.peek(LitStr) {
+        let lit: LitStr = input.parse()?;
+        let value = lit.value();
+        attributes.insert(attribute, AttributeType::Value(value));
+      } else {
         lookahead.error();
       }
-      let lit: LitStr = input.parse()?;
-      let value = lit.value();
-      attributes.insert(attribute, value);
       let lookahead = input.lookahead1();
       if lookahead.peek(Brace) {
         break;

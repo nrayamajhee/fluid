@@ -1,4 +1,5 @@
-use fluid::{body, document, js_closure, Context};
+use fluid::{js_closure, Context};
+use gloo_utils::{body};
 use fluid_macro::html;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -7,20 +8,21 @@ pub async fn async_main() -> Result<(), JsValue> {
   let ctx = Context::new();
   let counter = ctx.create_signal(0);
   {
-    let counter = counter.clone();
+    let c1 = counter.clone();
+    let c2 = counter.clone();
     let p = html! {
-      p id="test" class="test" {
+      p id="test" class=[ctx, &c1.get().to_string()] {
         "Counter"
         ( " is " )
-        [ctx, &counter.get().to_string()]
+        [ctx, &c2.get().to_string()]
       }
     };
-    body()?.append_child(&p)?;
+    body().append_child(&p)?;
   }
   let btn = html! {
     button { "+" }
   };
-  body()?.append_child(&btn)?;
+  body().append_child(&btn)?;
   {
     let counter = counter.clone();
     let cl = js_closure(move |_| {
