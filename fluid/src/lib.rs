@@ -1,6 +1,10 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
+use wasm_bindgen::prelude::Closure;
+use wasm_bindgen::JsCast;
+use web_sys::EventTarget;
+
 pub struct Signal<T> {
   inner: RefCell<T>,
   subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
@@ -46,4 +50,14 @@ impl Context {
     self.observers.borrow_mut().push(closure.clone());
     closure();
   }
+}
+
+pub fn add_event_and_forget<E>(el: &EventTarget, name: &str, event: E)
+where
+  E: FnMut(web_sys::Event) + 'static,
+{
+  let cl = Closure::wrap(Box::new(event) as Box<dyn FnMut(web_sys::Event)>);
+  el.add_event_listener_with_callback(name, cl.as_ref().unchecked_ref())
+    .unwrap();
+  cl.forget();
 }
