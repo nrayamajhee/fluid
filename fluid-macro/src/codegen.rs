@@ -42,6 +42,11 @@ pub fn build_node(node: Node) -> TS {
                   el.set_attribute(#key, #expr).expect("Cannot setup attributes inside the effect");
               });
           }}),
+          AttributeType::Event(expr) => attributes.push(quote! {
+            let cl =  Closure::wrap(Box::new(#expr) as Box<dyn FnMut(web_sys::Event)>);
+            el.add_event_listener_with_callback(#key, cl.as_ref().unchecked_ref())?;
+            cl.forget();
+          }),
         }
       }
       for child in el.children {
