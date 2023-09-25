@@ -1,3 +1,5 @@
+use gloo_utils::window;
+use gloo_timers::callback::Timeout;
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
@@ -60,4 +62,39 @@ where
   el.add_event_listener_with_callback(name, cl.as_ref().unchecked_ref())
     .unwrap();
   cl.forget();
+}
+
+pub fn now() -> f64 {
+  window().performance().unwrap().now()
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) -> i32 {
+  window()
+    .request_animation_frame(f.as_ref().unchecked_ref())
+    .expect("should register `requestAnimationFrame` OK")
+}
+
+pub fn on_animation_frame(mut closure: impl FnMut(f64) + 'static, fps: Option<f64>) {
+  let t = Rc::new(RefCell::new(0.));
+  let f = Rc::new(RefCell::new(None));
+  let g = f.clone();
+  let then = t.clone();
+  let closure = Closure::wrap(Box::new(move || {
+    let mut then = then.borrow_mut();
+    let delta = now() - *then;
+    closure(delta);
+    *then = now();
+    let h = f.clone();
+    let next_frame = move || {
+      request_animation_frame(h.borrow().as_ref().unwrap());
+    };
+    if let Some(fps) = fps {
+      Timeout::new(((1000. / fps) - delta) as u32, next_frame).forget();
+    } else {
+      next_frame();
+    };
+  }) as Box<dyn FnMut()>);
+  *g.borrow_mut() = Some(closure);
+  *t.borrow_mut() = now();
+  request_animation_frame(g.borrow().as_ref().unwrap());
 }
