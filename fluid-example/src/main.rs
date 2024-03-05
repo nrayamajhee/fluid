@@ -13,12 +13,20 @@ pub async fn async_main() -> Result<(), JsValue> {
     let c3 = counter.clone();
     let p = html! {
       div {
+        style { r#"
+            .odd {
+                color: red;
+            }
+            .even {
+                color: blue;
+            }
+        "#}
         p
         id="test"
-        class=[ctx, &c1.get().to_string()]
+        class=[ctx, if *c1.get() % 2 == 0  { "even" } else { "odd" }]
         {
           "Counter"
-          ( " is " )
+          ( " is: " )
           [ctx, &c2.get().to_string()]
         }
         button
