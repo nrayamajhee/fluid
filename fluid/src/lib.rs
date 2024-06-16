@@ -1,5 +1,5 @@
-use gloo_utils::window;
 use gloo_timers::callback::Timeout;
+use gloo_utils::window;
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
@@ -31,25 +31,25 @@ impl<T> Signal<T> {
 }
 
 pub struct Context {
-  observers: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
+  context: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
 }
 
 impl Context {
   pub fn new() -> Self {
     Self {
-      observers: Rc::new(RefCell::new(Vec::new())),
+      context: Rc::new(RefCell::new(Vec::new())),
     }
   }
   pub fn create_signal<T>(&self, value: T) -> Rc<Signal<T>> {
     Rc::new(Signal {
       inner: RefCell::new(value),
       subscribers: RefCell::new(Vec::new()),
-      context: self.observers.clone(),
+      context: self.context.clone(),
     })
   }
   pub fn create_effect(&self, closure: impl Fn() + 'static) {
     let closure = Rc::new(closure);
-    self.observers.borrow_mut().push(closure.clone());
+    self.context.borrow_mut().push(closure.clone());
     closure();
   }
 }
