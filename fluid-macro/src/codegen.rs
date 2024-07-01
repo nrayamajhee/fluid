@@ -2,7 +2,7 @@ extern crate proc_macro;
 use proc_macro2::TokenStream as TS;
 use quote::quote;
 
-use crate::ast::{AttributeType, Node};
+use crate::ast::{Attribute, Node};
 
 pub fn build_node(node: Node) -> TS {
   match node {
@@ -35,14 +35,18 @@ pub fn build_node(node: Node) -> TS {
       let mut children = Vec::new();
       for (key, value) in el.attributes {
         match value {
-          AttributeType::Value(val) => attributes.push(quote! {el.set_attribute(#key, #val)?;}),
-          AttributeType::Effect((ctx, expr)) => attributes.push(quote! {{
+          Attribute::Value(val) => attributes.push(quote! {el.set_attribute(#key, #val)?;}),
+          Attribute::Expr(val) => {
+            let value = quote! { #val };
+            attributes.push(quote! {el.set_attribute(#key, #value)?;})
+          }
+          Attribute::Effect((ctx, expr)) => attributes.push(quote! {{
               let el = el.clone();
               #ctx.create_effect(move || {
                   el.set_attribute(#key, #expr).expect("Cannot setup attributes inside the effect");
               });
           }}),
-          AttributeType::Event(expr) => attributes.push(quote! {
+          Attribute::Event(expr) => attributes.push(quote! {
             let cl =  Closure::wrap(Box::new(#expr) as Box<dyn FnMut(web_sys::Event)>);
             el.add_event_listener_with_callback(#key, cl.as_ref().unchecked_ref())?;
             cl.forget();

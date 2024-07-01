@@ -23,6 +23,7 @@ pub async fn async_main() -> Result<(), JsValue> {
         "#}
         p
         id="test"
+        // class=(if *c1.get() % 2 == 0  { "even" } else { "odd" })
         class=[ctx, if *c1.get() % 2 == 0  { "even" } else { "odd" }]
         {
           "Counter"

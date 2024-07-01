@@ -1,24 +1,26 @@
 extern crate proc_macro;
-use fluid::Context;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::ToTokens;
 use std::{collections::HashMap, error::Error};
 use syn::{
   braced, bracketed, parenthesized,
   parse::{Parse, ParseStream},
   token::{Brace, Bracket, Paren},
-  Ident, LitStr, Result, Token,
+  Ident, LitStr, Token,
 };
 
-pub enum AttributeType {
+pub enum Attribute {
   Value(String),
+  Expr(TokenStream2),
   Effect((TokenStream2, TokenStream2)),
   Event(TokenStream2),
 }
 
+// impl Parse for Attribute {
+// }
+
 pub struct Element {
   pub name: String,
-  pub attributes: HashMap<String, AttributeType>,
+  pub attributes: HashMap<String, Attribute>,
   pub children: Vec<Box<Node>>,
 }
 
@@ -30,115 +32,81 @@ pub enum Node {
 }
 
 impl Parse for Node {
-  fn parse(input: ParseStream) -> Result<Self> {
+  fn parse(input: ParseStream) -> syn::Result<Self> {
+    // init children and attributes
+    let mut children: Vec<Box<Node>> = Vec::new();
+    let mut attributes: HashMap<String, Attribute> = HashMap::new();
+
     let lookahead = input.lookahead1();
+
     // If it's { "Some String" }
-    // return a text node
     if lookahead.peek(LitStr) {
       let lit: LitStr = input.parse()?;
       return Ok(Node::Text(lit.value()));
     }
     // If it's { (rust code) }
-    // return expr node
     if lookahead.peek(Paren) {
-      let content;
-      parenthesized!(content in input);
-      let expr = content.cursor().token_stream();
-      while !content.is_empty() {
-        content.step(|cursor| {
-          if let Some((_, next)) = cursor.token_tree() {
-            return Ok(((), next));
-          } else {
-            return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-          }
-        })?;
-      }
+      let expr = exhaust_paren(&input)?;
       return Ok(Node::Expr(expr));
     }
     // If it's { [ rust code ] }
-    // return effect node
     if lookahead.peek(Bracket) {
-      let content;
-      bracketed!(content in input);
-      let expr = content.cursor().token_stream();
-      while !content.is_empty() {
-        content.step(|cursor| {
-          if let Some((_, next)) = cursor.token_tree() {
-            return Ok(((), next));
-          } else {
-            return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-          }
-        })?;
-      }
+      let expr = exhause_bracket(&input)?;
       let ctx = expr.clone().into_iter().take(1).collect();
       let expr = expr.into_iter().skip(2).collect();
       return Ok(Node::EffectDiv((ctx, expr)));
     }
-    // Parse ident and attributes
-    let ident: Ident = input.parse()?;
-    let name = ident.to_string();
-    let mut children: Vec<Box<Node>> = Vec::new();
-    let mut attributes: HashMap<String, AttributeType> = HashMap::new();
+
+    // Parse ident
+    let name = input.parse::<Ident>()?.to_string();
+
+    // Parse attributes
     let lookahead = input.lookahead1();
     while !lookahead.peek(Brace) {
+      // handle @event
       let lookahead = input.lookahead1();
       let mut event = false;
       if lookahead.peek(Token![@]) {
         let _: Token![@] = input.parse()?;
         event = true;
       }
-      let ident: Ident = input.parse()?;
-      let attribute = ident.to_string();
+      // parse attribute name
+      let attribute = input.parse::<Ident>()?.to_string();
+
+      // parse [=]
       let lookahead = input.lookahead1();
       if !lookahead.peek(Token![=]) {
         lookahead.error();
       }
       let _: Token![=] = input.parse()?;
-      if event {
-        let content;
-        parenthesized!(content in input);
-        let expr = content.cursor().token_stream();
-        while !content.is_empty() {
-          content.step(|cursor| {
-            if let Some((_, next)) = cursor.token_tree() {
-              return Ok(((), next));
-            } else {
-              return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-            }
-          })?;
-        }
-        attributes.insert(attribute, AttributeType::Event(expr));
-      } else {
-        let lookahead = input.lookahead1();
-        if lookahead.peek(Bracket) {
-          let content;
-          bracketed!(content in input);
-          let expr = content.cursor().token_stream();
-          while !content.is_empty() {
-            content.step(|cursor| {
-              if let Some((_, next)) = cursor.token_tree() {
-                return Ok(((), next));
-              } else {
-                return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-              }
-            })?;
-          }
-          let ctx = expr.clone().into_iter().take(1).collect();
-          let expr = expr.into_iter().skip(2).collect();
-          attributes.insert(attribute, AttributeType::Effect((ctx, expr)));
-        } else if lookahead.peek(LitStr) {
-          let lit: LitStr = input.parse()?;
-          let value = lit.value();
-          attributes.insert(attribute, AttributeType::Value(value));
-        } else {
-          lookahead.error();
-        }
-      }
       let lookahead = input.lookahead1();
-      if lookahead.peek(Brace) {
+      if event {
+        let expr = exhaust_paren(&input)?;
+        attributes.insert(attribute, Attribute::Event(expr));
+      // If it's  "Some String"
+      } else if lookahead.peek(LitStr) {
+        let lit: LitStr = input.parse()?;
+        let value = lit.value();
+        attributes.insert(attribute, Attribute::Value(value));
+      // If it's ( rust code )
+      } else if lookahead.peek(Paren) {
+        let expr = exhaust_paren(&input)?;
+        attributes.insert(attribute, Attribute::Expr(expr));
+      // If it's [ rust code ]
+      } else if lookahead.peek(Bracket) {
+        let expr = exhause_bracket(&input)?;
+        let ctx = expr.clone().into_iter().take(1).collect();
+        let expr = expr.into_iter().skip(2).collect();
+        attributes.insert(attribute, Attribute::Effect((ctx, expr)));
+      // parse event
+      } else {
+        lookahead.error();
+      }
+      if input.lookahead1().peek(Brace) {
         break;
       }
     }
+
     // Parse children
     let content;
     braced!(content in input);
@@ -152,4 +120,36 @@ impl Parse for Node {
       children,
     }))
   }
+}
+
+fn exhause_bracket(input: &ParseStream) -> Result<proc_macro2::TokenStream, syn::Error> {
+  let content;
+  bracketed!(content in input);
+  let expr = content.cursor().token_stream();
+  while !content.is_empty() {
+    content.step(|cursor| {
+      if let Some((_, next)) = cursor.token_tree() {
+        return Ok(((), next));
+      } else {
+        return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+      }
+    })?;
+  }
+  Ok(expr)
+}
+
+fn exhaust_paren(input: &ParseStream) -> Result<proc_macro2::TokenStream, syn::Error> {
+  let content;
+  parenthesized!(content in input);
+  let expr = content.cursor().token_stream();
+  while !content.is_empty() {
+    content.step(|cursor| {
+      if let Some((_, next)) = cursor.token_tree() {
+        return Ok(((), next));
+      } else {
+        return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+      }
+    })?;
+  }
+  Ok(expr)
 }
