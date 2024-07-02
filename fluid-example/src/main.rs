@@ -7,13 +7,9 @@ use wasm_bindgen::JsCast;
 pub async fn async_main() -> Result<(), JsValue> {
   let ctx = Context::new();
   let counter = ctx.create_signal(0);
-  {
-    let c1 = counter.clone();
-    let c2 = counter.clone();
-    let c3 = counter.clone();
-    let p = html! {
-      div {
-        style { r#"
+  let p = html! {
+    div {
+      style { r#"
             .odd {
                 color: red;
             }
@@ -21,25 +17,23 @@ pub async fn async_main() -> Result<(), JsValue> {
                 color: blue;
             }
         "#}
-        p
-        id="test"
-        // class=(if *c1.get() % 2 == 0  { "even" } else { "odd" })
-        class=[ctx, if *c1.get() % 2 == 0  { "even" } else { "odd" }]
-        {
-          "Counter"
-          ( " is: " )
-          [ctx, &c2.get().to_string()]
-        }
-        button
-        @click=(move |_| {
-          let new_val = *c3.get() + 1;
-          counter.set(new_val);
-        })
-        { "+" }
+      p
+      id="test"
+      class=[ctx, [counter] -> if *counter.get() % 2 == 0  { "even" } else { "odd" }]
+      {
+        "Counter"
+        ( " is: " )
+        [ctx, [counter] -> counter.get().to_string()]
       }
-    };
-    body().append_child(&p)?;
-  }
+      button
+      @click=(move |_| {
+        let new_val = *counter.get() + 1;
+        counter.set(new_val);
+      })
+      { "+" }
+    }
+  };
+  body().append_child(&p)?;
   Ok(())
 }
 

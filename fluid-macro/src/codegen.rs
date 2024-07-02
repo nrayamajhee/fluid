@@ -2,7 +2,7 @@ extern crate proc_macro;
 use proc_macro2::TokenStream as TS;
 use quote::quote;
 
-use crate::ast::{Attribute, Node};
+use crate::ast::{AttributeValue, Effect, Node};
 
 pub fn build_node(node: Node) -> TS {
   match node {
@@ -12,14 +12,18 @@ pub fn build_node(node: Node) -> TS {
           gloo_utils::document().create_text_node(#text)
       }}
     }
-    Node::EffectDiv((ctx, expr)) => {
+    Node::EffectDiv(Effect { ctx, signals, expr }) => {
       let ctx = quote! { #ctx };
-      let inner = quote! { #expr };
+      let inner_html = quote! {};
       quote! {{
           let node = gloo_utils::document().create_element("span")?;
           let n = node.clone();
+          #(
+              let #signals = #signals.clone();
+          )*
           #ctx.create_effect(move || {
-            n.set_inner_html(#inner);
+            let inner_html = { #expr };
+            n.set_inner_html(&inner_html);
           });
           node
       }}
@@ -35,18 +39,22 @@ pub fn build_node(node: Node) -> TS {
       let mut children = Vec::new();
       for (key, value) in el.attributes {
         match value {
-          Attribute::Value(val) => attributes.push(quote! {el.set_attribute(#key, #val)?;}),
-          Attribute::Expr(val) => {
+          AttributeValue::Value(val) => attributes.push(quote! {el.set_attribute(#key, #val)?;}),
+          AttributeValue::Expr(val) => {
             let value = quote! { #val };
             attributes.push(quote! {el.set_attribute(#key, #value)?;})
           }
-          Attribute::Effect((ctx, expr)) => attributes.push(quote! {{
+          AttributeValue::Effect(Effect { ctx, signals, expr }) => attributes.push(quote! {{
               let el = el.clone();
+              #(
+                  let #signals = #signals.clone();
+              )*
               #ctx.create_effect(move || {
+                  let value = { #expr };
                   el.set_attribute(#key, #expr).expect("Cannot setup attributes inside the effect");
               });
           }}),
-          Attribute::Event(expr) => attributes.push(quote! {
+          AttributeValue::Event(expr) => attributes.push(quote! {
             let cl =  Closure::wrap(Box::new(#expr) as Box<dyn FnMut(web_sys::Event)>);
             el.add_event_listener_with_callback(#key, cl.as_ref().unchecked_ref())?;
             cl.forget();

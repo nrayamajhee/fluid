@@ -1,32 +1,54 @@
 extern crate proc_macro;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro::Delimiter;
+use proc_macro2::{TokenStream, TokenTree};
 use std::{collections::HashMap, error::Error};
 use syn::{
   braced, bracketed, parenthesized,
-  parse::{Parse, ParseStream},
+  parse::{Parse, ParseBuffer, ParseStream},
   token::{Brace, Bracket, Paren},
   Ident, LitStr, Token,
 };
 
-pub enum Attribute {
-  Value(String),
-  Expr(TokenStream2),
-  Effect((TokenStream2, TokenStream2)),
-  Event(TokenStream2),
+pub struct Effect {
+  pub ctx: Ident,
+  pub signals: Vec<Ident>,
+  pub expr: TokenStream,
 }
 
-// impl Parse for Attribute {
-// }
+pub enum AttributeValue {
+  Value(String),
+  Expr(TokenStream),
+  Effect(Effect),
+  Event(TokenStream),
+}
 
 pub struct Element {
   pub name: String,
-  pub attributes: HashMap<String, Attribute>,
+  pub attributes: HashMap<String, AttributeValue>,
   pub children: Vec<Box<Node>>,
 }
 
+impl Parse for Effect {
+  fn parse(input: ParseStream) -> syn::Result<Self> {
+    let content;
+    bracketed!(content in input);
+    let ctx = content.parse()?;
+    ignore_token::<Token![,]>(&&content)?;
+    let sigs;
+    bracketed!(sigs in content);
+    ignore_token::<Token![->]>(&&content)?;
+    let expr = content.parse()?;
+    let mut signals = Vec::new();
+    for _ in 0..sigs.cursor().token_stream().into_iter().count() {
+      signals.push(sigs.parse()?);
+    }
+    Ok(Self { ctx, signals, expr })
+  }
+}
+
 pub enum Node {
-  Expr(TokenStream2),
-  EffectDiv((TokenStream2, TokenStream2)),
+  Expr(TokenStream),
+  EffectDiv(Effect),
   Text(String),
   Element(Element),
 }
@@ -35,7 +57,7 @@ impl Parse for Node {
   fn parse(input: ParseStream) -> syn::Result<Self> {
     // init children and attributes
     let mut children: Vec<Box<Node>> = Vec::new();
-    let mut attributes: HashMap<String, Attribute> = HashMap::new();
+    let mut attributes: HashMap<String, AttributeValue> = HashMap::new();
 
     let lookahead = input.lookahead1();
 
@@ -51,10 +73,8 @@ impl Parse for Node {
     }
     // If it's { [ rust code ] }
     if lookahead.peek(Bracket) {
-      let expr = exhause_bracket(&input)?;
-      let ctx = expr.clone().into_iter().take(1).collect();
-      let expr = expr.into_iter().skip(2).collect();
-      return Ok(Node::EffectDiv((ctx, expr)));
+      let effect: Effect = input.parse()?;
+      return Ok(Node::EffectDiv(effect));
     }
 
     // Parse ident
@@ -67,7 +87,7 @@ impl Parse for Node {
       let lookahead = input.lookahead1();
       let mut event = false;
       if lookahead.peek(Token![@]) {
-        let _: Token![@] = input.parse()?;
+        ignore_token::<Token![@]>(&input)?;
         event = true;
       }
       // parse attribute name
@@ -78,26 +98,24 @@ impl Parse for Node {
       if !lookahead.peek(Token![=]) {
         lookahead.error();
       }
-      let _: Token![=] = input.parse()?;
+      ignore_token::<Token![=]>(&input)?;
       let lookahead = input.lookahead1();
       if event {
         let expr = exhaust_paren(&input)?;
-        attributes.insert(attribute, Attribute::Event(expr));
+        attributes.insert(attribute, AttributeValue::Event(expr));
       // If it's  "Some String"
       } else if lookahead.peek(LitStr) {
         let lit: LitStr = input.parse()?;
         let value = lit.value();
-        attributes.insert(attribute, Attribute::Value(value));
+        attributes.insert(attribute, AttributeValue::Value(value));
       // If it's ( rust code )
       } else if lookahead.peek(Paren) {
         let expr = exhaust_paren(&input)?;
-        attributes.insert(attribute, Attribute::Expr(expr));
+        attributes.insert(attribute, AttributeValue::Expr(expr));
       // If it's [ rust code ]
       } else if lookahead.peek(Bracket) {
-        let expr = exhause_bracket(&input)?;
-        let ctx = expr.clone().into_iter().take(1).collect();
-        let expr = expr.into_iter().skip(2).collect();
-        attributes.insert(attribute, Attribute::Effect((ctx, expr)));
+        let effect: Effect = input.parse()?;
+        attributes.insert(attribute, AttributeValue::Effect(effect));
       // parse event
       } else {
         lookahead.error();
@@ -122,34 +140,38 @@ impl Parse for Node {
   }
 }
 
-fn exhause_bracket(input: &ParseStream) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn exhause_bracket(input: &ParseStream) -> Result<TokenStream, syn::Error> {
   let content;
   bracketed!(content in input);
   let expr = content.cursor().token_stream();
   while !content.is_empty() {
-    content.step(|cursor| {
-      if let Some((_, next)) = cursor.token_tree() {
-        return Ok(((), next));
-      } else {
-        return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-      }
-    })?;
+    step(&content)?;
   }
   Ok(expr)
 }
 
-fn exhaust_paren(input: &ParseStream) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn exhaust_paren(input: &ParseStream) -> Result<TokenStream, syn::Error> {
   let content;
   parenthesized!(content in input);
   let expr = content.cursor().token_stream();
   while !content.is_empty() {
-    content.step(|cursor| {
-      if let Some((_, next)) = cursor.token_tree() {
-        return Ok(((), next));
-      } else {
-        return Err(cursor.error("Something went wrong parsing contents inside ()!"));
-      }
-    })?;
+    step(&content)?;
   }
   Ok(expr)
+}
+
+fn ignore_token<T: Parse>(input: &ParseStream) -> syn::Result<()> {
+  let _: T = input.parse()?;
+  Ok(())
+}
+
+fn step(content: &ParseBuffer) -> syn::Result<()> {
+  content.step(|cursor| {
+    if let Some((_, next)) = cursor.token_tree() {
+      return Ok(((), next));
+    } else {
+      return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+    }
+  })?;
+  Ok(())
 }
