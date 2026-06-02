@@ -1,11 +1,10 @@
 extern crate proc_macro;
-use proc_macro::Delimiter;
-use proc_macro2::{TokenStream, TokenTree};
-use std::{collections::HashMap, error::Error};
+use proc_macro2::TokenStream;
+use std::collections::HashMap;
 use syn::{
-  braced, bracketed, parenthesized,
+  braced,
   parse::{Parse, ParseBuffer, ParseStream},
-  token::{Brace, Bracket, Paren},
+  token::Brace,
   Ident, LitStr, Token,
 };
 
@@ -28,24 +27,6 @@ pub struct Element {
   pub children: Vec<Box<Node>>,
 }
 
-impl Parse for Effect {
-  fn parse(input: ParseStream) -> syn::Result<Self> {
-    let content;
-    bracketed!(content in input);
-    let ctx = content.parse()?;
-    ignore_token::<Token![,]>(&&content)?;
-    let sigs;
-    bracketed!(sigs in content);
-    ignore_token::<Token![->]>(&&content)?;
-    let expr = content.parse()?;
-    let mut signals = Vec::new();
-    for _ in 0..sigs.cursor().token_stream().into_iter().count() {
-      signals.push(sigs.parse()?);
-    }
-    Ok(Self { ctx, signals, expr })
-  }
-}
-
 pub enum Node {
   Expr(TokenStream),
   EffectDiv(Effect),
@@ -61,23 +42,54 @@ impl Parse for Node {
 
     let lookahead = input.lookahead1();
 
-    // If it's { "Some String" }
+    // If it's a string literal, e.g. "Some String"
     if lookahead.peek(LitStr) {
       let lit: LitStr = input.parse()?;
       return Ok(Node::Text(lit.value()));
     }
-    // If it's { (rust code) }
-    if lookahead.peek(Paren) {
-      let expr = exhaust_paren(&input)?;
-      return Ok(Node::Expr(expr));
-    }
-    // If it's { [ rust code ] }
-    if lookahead.peek(Bracket) {
-      let effect: Effect = input.parse()?;
-      return Ok(Node::EffectDiv(effect));
+
+    // If it's a reactive block, e.g. #{ |sigs| expr }
+    if lookahead.peek(Token![#]) {
+      ignore_token::<Token![#]>(&input)?;
+      let content;
+      braced!(content in input);
+      
+      if content.peek(Token![|]) {
+        ignore_token::<Token![|]>(&content)?;
+        let mut signals = Vec::new();
+        while !content.peek(Token![|]) {
+          let sig: Ident = content.parse()?;
+          signals.push(sig);
+          if content.peek(Token![,]) {
+            ignore_token::<Token![,]>(&content)?;
+          }
+        }
+        ignore_token::<Token![|]>(&content)?;
+        
+        let expr = content.cursor().token_stream();
+        while !content.is_empty() {
+          step(&content)?;
+        }
+        
+        let ctx = Ident::new("ctx", proc_macro2::Span::call_site());
+        return Ok(Node::EffectDiv(Effect { ctx, signals, expr }));
+      } else {
+        return Err(content.error("Expected '|' to start signal list in reactive block"));
+      }
     }
 
-    // Parse ident
+    // If it's a standard braced block `{ ... }` (static expression/closure/etc.)
+    if lookahead.peek(Brace) {
+      let content;
+      braced!(content in input);
+      let expr = content.cursor().token_stream();
+      while !content.is_empty() {
+        step(&content)?;
+      }
+      return Ok(Node::Expr(expr));
+    }
+
+    // Parse ident (tag name)
     let name = input.parse::<Ident>()?.to_string();
 
     // Parse attributes
@@ -96,30 +108,65 @@ impl Parse for Node {
       // parse [=]
       let lookahead = input.lookahead1();
       if !lookahead.peek(Token![=]) {
-        lookahead.error();
+        return Err(input.error("Expected '=' after attribute name"));
       }
       ignore_token::<Token![=]>(&input)?;
+      
       let lookahead = input.lookahead1();
       if event {
-        let expr = exhaust_paren(&input)?;
-        attributes.insert(attribute, AttributeValue::Event(expr));
-      // If it's  "Some String"
+        if lookahead.peek(Brace) {
+          let content;
+          braced!(content in input);
+          let expr = content.cursor().token_stream();
+          while !content.is_empty() {
+            step(&content)?;
+          }
+          attributes.insert(attribute, AttributeValue::Event(expr));
+        } else {
+          return Err(input.error("Expected braced expression for event attribute value"));
+        }
       } else if lookahead.peek(LitStr) {
         let lit: LitStr = input.parse()?;
         let value = lit.value();
         attributes.insert(attribute, AttributeValue::Value(value));
-      // If it's ( rust code )
-      } else if lookahead.peek(Paren) {
-        let expr = exhaust_paren(&input)?;
+      } else if lookahead.peek(Token![#]) {
+        ignore_token::<Token![#]>(&input)?;
+        let content;
+        braced!(content in input);
+        if content.peek(Token![|]) {
+          ignore_token::<Token![|]>(&content)?;
+          let mut signals = Vec::new();
+          while !content.peek(Token![|]) {
+            let sig: Ident = content.parse()?;
+            signals.push(sig);
+            if content.peek(Token![,]) {
+              ignore_token::<Token![,]>(&content)?;
+            }
+          }
+          ignore_token::<Token![|]>(&content)?;
+          
+          let expr = content.cursor().token_stream();
+          while !content.is_empty() {
+            step(&content)?;
+          }
+          
+          let ctx = Ident::new("ctx", proc_macro2::Span::call_site());
+          attributes.insert(attribute, AttributeValue::Effect(Effect { ctx, signals, expr }));
+        } else {
+          return Err(content.error("Expected '|' to start signal list in reactive block"));
+        }
+      } else if lookahead.peek(Brace) {
+        let content;
+        braced!(content in input);
+        let expr = content.cursor().token_stream();
+        while !content.is_empty() {
+          step(&content)?;
+        }
         attributes.insert(attribute, AttributeValue::Expr(expr));
-      // If it's [ rust code ]
-      } else if lookahead.peek(Bracket) {
-        let effect: Effect = input.parse()?;
-        attributes.insert(attribute, AttributeValue::Effect(effect));
-      // parse event
       } else {
-        lookahead.error();
+        return Err(input.error("Expected string literal, reactive block, or braced expression for attribute value"));
       }
+
       if input.lookahead1().peek(Brace) {
         break;
       }
@@ -140,27 +187,7 @@ impl Parse for Node {
   }
 }
 
-fn exhause_bracket(input: &ParseStream) -> Result<TokenStream, syn::Error> {
-  let content;
-  bracketed!(content in input);
-  let expr = content.cursor().token_stream();
-  while !content.is_empty() {
-    step(&content)?;
-  }
-  Ok(expr)
-}
-
-fn exhaust_paren(input: &ParseStream) -> Result<TokenStream, syn::Error> {
-  let content;
-  parenthesized!(content in input);
-  let expr = content.cursor().token_stream();
-  while !content.is_empty() {
-    step(&content)?;
-  }
-  Ok(expr)
-}
-
-fn ignore_token<T: Parse>(input: &ParseStream) -> syn::Result<()> {
+fn ignore_token<T: Parse>(input: ParseStream) -> syn::Result<()> {
   let _: T = input.parse()?;
   Ok(())
 }
@@ -170,7 +197,7 @@ fn step(content: &ParseBuffer) -> syn::Result<()> {
     if let Some((_, next)) = cursor.token_tree() {
       return Ok(((), next));
     } else {
-      return Err(cursor.error("Something went wrong parsing contents inside ()!"));
+      return Err(cursor.error("Something went wrong parsing braced contents!"));
     }
   })?;
   Ok(())

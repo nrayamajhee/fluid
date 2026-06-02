@@ -19,17 +19,17 @@ pub async fn async_main() -> Result<(), JsValue> {
         "#}
       p
       id="test"
-      class=[ctx, [counter] -> if *counter.get() % 2 == 0  { "even" } else { "odd" }]
+      class=#{ |counter| if *counter.get() % 2 == 0 { "even" } else { "odd" } }
       {
         "Counter"
-        ( " is: " )
-        [ctx, [counter] -> counter.get().to_string()]
+        { " is: " }
+        #{ |counter| counter.get().to_string() }
       }
       button
-      @click=(move |_| {
+      @click={ move |_| {
         let new_val = *counter.get() + 1;
         counter.set(new_val);
-      })
+      }}
       { "+" }
     }
   };

@@ -14,7 +14,6 @@ pub fn build_node(node: Node) -> TS {
     }
     Node::EffectDiv(Effect { ctx, signals, expr }) => {
       let ctx = quote! { #ctx };
-      let inner_html = quote! {};
       quote! {{
           let node = gloo_utils::document().create_element("span")?;
           let n = node.clone();
@@ -51,7 +50,7 @@ pub fn build_node(node: Node) -> TS {
               )*
               #ctx.create_effect(move || {
                   let value = { #expr };
-                  el.set_attribute(#key, #expr).expect("Cannot setup attributes inside the effect");
+                  el.set_attribute(#key, value.as_ref()).expect("Cannot setup attributes inside the effect");
               });
           }}),
           AttributeValue::Event(expr) => attributes.push(quote! {
