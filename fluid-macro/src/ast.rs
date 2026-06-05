@@ -36,10 +36,6 @@ pub enum Node {
 
 impl Parse for Node {
   fn parse(input: ParseStream) -> syn::Result<Self> {
-    // init children and attributes
-    let mut children: Vec<Box<Node>> = Vec::new();
-    let mut attributes: HashMap<String, AttributeValue> = HashMap::new();
-
     let lookahead = input.lookahead1();
 
     // If it's a string literal, e.g. "Some String"
@@ -92,6 +88,10 @@ impl Parse for Node {
     // Parse ident (tag name)
     let name = input.parse::<Ident>()?.to_string();
 
+    // init children and attributes
+    let mut children: Vec<Box<Node>> = Vec::new();
+    let mut attributes: HashMap<String, AttributeValue> = HashMap::new();
+
     // Parse attributes
     let lookahead = input.lookahead1();
     while !lookahead.peek(Brace) {
@@ -114,6 +114,8 @@ impl Parse for Node {
       
       let lookahead = input.lookahead1();
       if event {
+        // Event attributes (prefixed with @), e.g., @click={ ... }
+        // We capture the braced closure to wrap it as a JS event callback.
         if lookahead.peek(Brace) {
           let content;
           braced!(content in input);
@@ -126,10 +128,13 @@ impl Parse for Node {
           return Err(input.error("Expected braced expression for event attribute value"));
         }
       } else if lookahead.peek(LitStr) {
+        // Static string literal attributes, e.g., class="even"
         let lit: LitStr = input.parse()?;
         let value = lit.value();
         attributes.insert(attribute, AttributeValue::Value(value));
       } else if lookahead.peek(Token![#]) {
+        // Reactive signal-bound attributes, e.g., class=#{ |counter| ... }
+        // Clones each listed signal to capture them by-value inside the reactive effect closure.
         ignore_token::<Token![#]>(&input)?;
         let content;
         braced!(content in input);
@@ -156,6 +161,8 @@ impl Parse for Node {
           return Err(content.error("Expected '|' to start signal list in reactive block"));
         }
       } else if lookahead.peek(Brace) {
+        // Non-reactive expressions, e.g., id={some_expr}
+        // Evaluated once at DOM element creation time.
         let content;
         braced!(content in input);
         let expr = content.cursor().token_stream();

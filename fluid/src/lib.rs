@@ -7,50 +7,65 @@ use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::EventTarget;
 
+thread_local! {
+  static EFFECT_STACK: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
+}
+
 pub struct Signal<T> {
   inner: RefCell<T>,
   subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
-  context: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
 }
 
 impl<T> Signal<T> {
   pub fn get(&self) -> Ref<'_, T> {
-    if let Some(sub) = self.context.borrow().last() {
-      if let Ok(mut subscribers) = self.subscribers.try_borrow_mut() {
-        subscribers.push(sub.clone());
+    EFFECT_STACK.with(|stack| {
+      if let Some(sub) = stack.borrow().last() {
+        if let Ok(mut subscribers) = self.subscribers.try_borrow_mut() {
+          if !subscribers.iter().any(|existing| Rc::ptr_eq(existing, sub)) {
+            subscribers.push(sub.clone());
+          }
+        }
       }
-    }
+    });
     self.inner.borrow()
   }
   pub fn set(&self, value: T) {
     *self.inner.borrow_mut() = value;
-    for sub in self.subscribers.borrow().iter() {
+    // Clone subscribers to avoid multiple borrows when executing subscriber callbacks
+    let subscribers = self.subscribers.borrow().clone();
+    for sub in subscribers.iter() {
+      EFFECT_STACK.with(|stack| {
+        stack.borrow_mut().push(sub.clone());
+      });
       sub();
+      EFFECT_STACK.with(|stack| {
+        stack.borrow_mut().pop();
+      });
     }
   }
 }
 
-pub struct Context {
-  context: Rc<RefCell<Vec<Rc<dyn Fn()>>>>,
-}
+pub struct Context;
 
 impl Context {
   pub fn new() -> Self {
-    Self {
-      context: Rc::new(RefCell::new(Vec::new())),
-    }
+    Self
   }
   pub fn create_signal<T>(&self, value: T) -> Rc<Signal<T>> {
     Rc::new(Signal {
       inner: RefCell::new(value),
       subscribers: RefCell::new(Vec::new()),
-      context: self.context.clone(),
     })
   }
   pub fn create_effect(&self, closure: impl Fn() + 'static) {
     let closure = Rc::new(closure);
-    self.context.borrow_mut().push(closure.clone());
+    EFFECT_STACK.with(|stack| {
+      stack.borrow_mut().push(closure.clone());
+    });
     closure();
+    EFFECT_STACK.with(|stack| {
+      stack.borrow_mut().pop();
+    });
   }
 }
 
