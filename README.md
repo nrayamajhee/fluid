@@ -57,3 +57,86 @@ html! {
   }
 }
 ```
+
+### The Generated Code
+
+The snippet above expands to the following:
+
+```rust
+{
+    let el = gloo_utils::document().create_element("div")?;
+
+    // style { r#"..."# }
+    let child = {
+        let el = gloo_utils::document().create_element("style")?;
+        let child = {
+            gloo_utils::document().create_text_node(
+                "\n      .odd {\n          color: red;\n      }\n      .even {\n          color: blue;\n      }\n  ",
+            )
+        };
+        el.append_child(&child)?;
+        el
+    };
+    el.append_child(&child)?;
+
+    // p id="test" class=#{ |counter| ... } { ... }
+    let child = {
+        let el = gloo_utils::document().create_element("p")?;
+
+        // id="test"
+        el.set_attribute("id", "test")?;
+
+        // class=#{ |counter| ... }
+        {
+            let el = el.clone();
+            let counter = counter.clone(); // one clone per listed signal
+            ctx.create_effect(move || {
+                let value = { if *counter.get() % 2 == 0 { "even" } else { "odd" } };
+                el.set_attribute("class", value.as_ref())
+                    .expect("Cannot setup attributes inside the effect");
+            });
+        }
+
+        // "Counter"
+        let child = { gloo_utils::document().create_text_node("Counter") };
+        el.append_child(&child)?;
+
+        // { " is: " }
+        let child = { gloo_utils::document().create_text_node(" is: ") };
+        el.append_child(&child)?;
+
+        // #{ |counter| counter.get().to_string() }
+        let child = {
+            let node = gloo_utils::document().create_element("span")?;
+            let n = node.clone();
+            let counter = counter.clone();
+            ctx.create_effect(move || {
+                let inner_html = { counter.get().to_string() };
+                n.set_inner_html(&inner_html);
+            });
+            node
+        };
+        el.append_child(&child)?;
+        el
+    };
+    el.append_child(&child)?;
+
+    // button @click={ ... } { "+" }
+    let child = {
+        let el = gloo_utils::document().create_element("button")?;
+        let cl = Closure::wrap(Box::new(move |_| {
+            let new_val = *counter.get() + 1;
+            counter.set(new_val);
+        }) as Box<dyn FnMut(web_sys::Event)>);
+        el.add_event_listener_with_callback("click", cl.as_ref().unchecked_ref())?;
+        cl.forget();
+
+        let child = { gloo_utils::document().create_text_node("+") };
+        el.append_child(&child)?;
+        el
+    };
+    el.append_child(&child)?;
+
+    el
+}
+```
