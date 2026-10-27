@@ -33,11 +33,19 @@ gloo_utils::body().append_child(&page)?;
 ## Example
 
 [`fluid-example`](fluid-example/src/main.rs) is a one-page tour; each
-section is one function. Run it with [Trunk](https://trunkrs.dev):
+section is one function. It is styled with Tailwind CSS, which
+[Trunk](https://trunkrs.dev) builds from
+[`src/tailwind.css`](fluid-example/src/tailwind.css) (Trunk downloads the
+Tailwind CLI version pinned in `Trunk.toml`):
 
 ```sh
+cargo install trunk
 cd fluid-example && trunk serve
 ```
+
+Tailwind finds classes by scanning the Rust sources, so write each class
+name out whole. State-dependent classes are a good fit for toggles:
+`class="flex gap-3" class:"text-slate-400 line-through"=#{ |done| done.value() }`.
 
 | section      | shows                                                                                                                                                |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
