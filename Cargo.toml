@@ -5,6 +5,4 @@ members = [
     "fluid",
     "fluid-macro",
     "fluid-example",
-    "compat/studio",
-    "compat/wgpu-test",
 ]

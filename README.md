@@ -248,10 +248,3 @@ cargo test -p fluid --target wasm32-unknown-unknown   # DOM tests, headless
 The DOM tests run in headless Chrome through `wasm-bindgen-test-runner`
 (`cargo install wasm-bindgen-cli --version <the locked wasm-bindgen>`), which
 needs a `chromedriver` matching the installed Chrome (`CHROMEDRIVER=...`).
-
-`compat/` holds every `html!` block of
-[studio's web-rust UI](https://github.com/nrayamajhee/studio) and
-[wgpu-test's pause menu](https://github.com/nrayamajhee/wgpu-test) verbatim,
-so `cargo build --workspace --target wasm32-unknown-unknown` checks that
-fluid still compiles them. Regenerate them with
-`python3 compat/scripts/extract.py <studio> <wgpu-test>`.

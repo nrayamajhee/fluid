@@ -389,9 +389,10 @@ with duplicate errors, `AttrValue`, `prop:`, class toggles, SVG namespace,
 typed events + modifiers + owner-tied listeners.
 _Risk_: dispatch changes for `{ expr }`/attribute values; covered by keeping
 every previously-accepted type producing identical calls. _Tests_: `trybuild`
-pass/fail cases (duplicates, bad names, reactive class + toggles), a
-compatibility fixture that compiles the exact `html!` blocks used by studio
-and wgpu-test, headless `wasm-bindgen-test` for DOM output where available.
+pass/fail cases (duplicates, bad names, reactive class + toggles; a
+`legacy.rs` case that also compiles against `main`), headless
+`wasm-bindgen-test` for DOM output, and building studio and wgpu-test
+against the branch with `[patch]` before merging.
 
 ### (d) Control flow
 
@@ -444,4 +445,6 @@ Nothing that compiles today should stop compiling, with these caveats:
    (`&String`, `&Rc<String>`, `&signal.get()`); a deeper chain needs an
    explicit `.as_str()`.
 
-Both downstream apps are compile-checked against this branch (see the PR).
+Before merging, build both downstream apps against this branch with a
+`[patch]` on the fluid git URL; they pick it up on their next `cargo update`
+because their dependency isn't pinned to a commit.
