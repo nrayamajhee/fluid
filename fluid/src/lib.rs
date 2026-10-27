@@ -10,7 +10,7 @@ use web_sys::EventTarget;
 pub mod dom;
 mod list;
 mod reactive;
-pub use dom::{listen, AttrValue, IntoNode, Listener, ListenerOptions};
+pub use dom::{each, listen, show, AttrValue, IntoNode, Listener, ListenerOptions};
 pub use reactive::{
   batch, create_effect, create_memo, has_owner, on_cleanup, provide_context, untrack, use_context,
   Context, Memo, Signal,
@@ -65,9 +65,9 @@ pub fn on_animation_frame(mut closure: impl FnMut(f64) + 'static, fps: Option<f6
 #[doc(hidden)]
 pub mod __private {
   pub use crate::dom::{
-    append, dynamic, each, element, fragment, on, set_attribute, set_property, svg_element, switch,
-    text, toggle_class, AttrViaDeref, AttrViaValue, Branch, Child, ViaAsNode, ViaDisplay,
-    ViaIntoNode, Wrap,
+    append, dynamic, element, fragment, on, set_attribute, set_property, svg_element, switch, text,
+    toggle_class, AttrViaDeref, AttrViaValue, Branch, Child, ViaAsNode, ViaDisplay, ViaIntoNode,
+    Wrap,
   };
   pub use wasm_bindgen;
   pub use web_sys;

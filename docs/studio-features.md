@@ -189,8 +189,12 @@ ul {
   keys, disposes rows for removed keys and moves existing rows into the new
   order without rebuilding them. Rows see the item value they were created
   with; per-row live data goes in signals inside the item (as Solid's `For`).
-- Every dynamic region is delimited by an empty comment anchor, so it works
+- Every dynamic region is delimited by an empty text node, so it works
   anywhere in a parent, including next to static siblings.
+- The runtime behind them is public too: `fluid::show(select, view)`
+  (rebuilds when `select`'s value changes; `if` expands to it) and
+  `fluid::each(items, key, view)` (the keyed list; `for` expands to it), so
+  the same behaviour is available from plain Rust.
 
 ### 6. Signal API
 

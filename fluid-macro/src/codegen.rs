@@ -155,17 +155,31 @@ fn build_child(node: Node, svg: bool) -> TS {
       let names = dedup(names);
       let clones = clone_captures(&names);
       let count = branches.len();
-      let arms = branches
+      let (conds, bodies): (Vec<_>, Vec<_>) = branches
         .into_iter()
-        .enumerate()
-        .map(|(index, (cond, children))| {
-          let branch = build_branch(children, &names, svg);
-          quote! { if #cond { (#index, false, #branch) } }
-        });
-      let otherwise = build_branch(otherwise.unwrap_or_default(), &names, svg);
+        .map(|(cond, children)| (cond, build_nodes(children, svg)))
+        .unzip();
+      let indices: Vec<usize> = (0..count).collect();
+      let otherwise = build_nodes(otherwise.unwrap_or_default(), svg);
+      // `show` keyed by the index of the true condition.
       quote! {{
-        #clones
-        #p::switch(move || #(#arms else)* { (#count, false, #otherwise) })
+        let __fluid_select = {
+          #clones
+          move || #(if #conds { #indices } else)* { #count }
+        };
+        let __fluid_view = {
+          #clones
+          move |__fluid_arm: usize| -> #p::web_sys::Node {
+            #clones
+            #[allow(unused_variables)]
+            let ctx = &::fluid::Context::current();
+            match __fluid_arm {
+              #(#indices => #bodies,)*
+              _ => #otherwise,
+            }
+          }
+        };
+        ::fluid::show(__fluid_select, __fluid_view)
       }}
     }
     Node::Match {
@@ -226,7 +240,7 @@ fn build_child(node: Node, svg: bool) -> TS {
           #clones
           move || ::std::iter::IntoIterator::into_iter(#items).collect::<::std::vec::Vec<_>>()
         };
-        #p::each(
+        ::fluid::each(
           __fluid_items,
           move |__fluid_item: &_| {
             #[allow(unused_variables)]

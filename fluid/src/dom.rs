@@ -356,19 +356,17 @@ fn build_in(scope: &Context, build: impl FnOnce() -> Node) -> Vec<Node> {
 #[doc(hidden)]
 pub type Branch = Box<dyn FnOnce() -> Node>;
 
-/// `if`/`match`: `select` names the chosen arm, whether it binds values,
-/// and how to build it. The region is rebuilt in a fresh scope when the arm
-/// changes, or on every change for arms that bind values.
-#[doc(hidden)]
-pub fn switch(mut select: impl FnMut() -> (usize, bool, Branch) + 'static) -> Node {
+/// The region behind [`show`] and `match`: `select` returns a key, whether
+/// to rebuild even if the key is unchanged, and how to build the branch.
+fn region<K: PartialEq + 'static>(mut select: impl FnMut() -> (K, bool, Branch) + 'static) -> Node {
   let parent = Context::current();
   let nodes: Rc<RefCell<Vec<Node>>> = Rc::default();
-  let shown: Rc<RefCell<Option<(usize, Context)>>> = Rc::default();
+  let shown: Rc<RefCell<Option<(K, Context)>>> = Rc::default();
   {
     let nodes = nodes.clone();
     create_effect(move || {
-      let (arm, binds, build) = select();
-      if !binds && matches!(&*shown.borrow(), Some((current, _)) if *current == arm) {
+      let (key, always, build) = select();
+      if !always && matches!(&*shown.borrow(), Some((current, _)) if *current == key) {
         return;
       }
       let old = shown.borrow_mut().take();
@@ -378,11 +376,43 @@ pub fn switch(mut select: impl FnMut() -> (usize, bool, Branch) + 'static) -> No
       let scope = parent.exact_child();
       let next = build_in(&scope, build);
       replace(&mut nodes.borrow_mut(), next);
-      *shown.borrow_mut() = Some((arm, scope));
+      *shown.borrow_mut() = Some((key, scope));
     });
   }
   let nodes = nodes.borrow();
   gather(&nodes)
+}
+
+/// Shows what `view` builds for the current value of `select`. The view is
+/// built in its own scope and only rebuilt, with the old scope disposed,
+/// when that value changes; what `view` reads doesn't trigger rebuilds.
+/// `html!`'s `if` is built on this.
+///
+/// ```ignore
+/// { fluid::show(move || open.value(), |open| if open { panel() } else { summary() }) }
+/// ```
+pub fn show<K, V>(mut select: impl FnMut() -> K + 'static, view: impl Fn(K) -> V + 'static) -> Node
+where
+  K: PartialEq + Clone + 'static,
+  V: IntoNode,
+{
+  let view = Rc::new(view);
+  region(move || {
+    let key = select();
+    let (view, value) = (view.clone(), key.clone());
+    (
+      key,
+      false,
+      Box::new(move || view(value).into_node()) as Branch,
+    )
+  })
+}
+
+/// `match`: `select` names the chosen arm, whether it binds values (then it
+/// is rebuilt on every change), and how to build it.
+#[doc(hidden)]
+pub fn switch(select: impl FnMut() -> (usize, bool, Branch) + 'static) -> Node {
+  region(select)
 }
 
 struct Row {
@@ -406,15 +436,25 @@ impl Siblings for Dom {
   }
 }
 
-/// A keyed list: rows are built once per key, removed with their scope when
-/// the key goes, and moved (not rebuilt) when the order changes. Later
-/// duplicates of a key are skipped.
-#[doc(hidden)]
-pub fn each<T: 'static, K: Eq + Hash + Clone + 'static>(
-  mut items: impl FnMut() -> Vec<T> + 'static,
+/// A keyed list of what `items` returns. Each row is built once per key, in
+/// its own scope; rows are moved (not rebuilt) when the order changes and
+/// disposed when their key goes. Later duplicates of a key are skipped.
+/// `html!`'s `for` is built on this.
+///
+/// ```ignore
+/// { fluid::each(move || todos.cloned(), |todo| todo.id, todo_item) }
+/// ```
+pub fn each<T, K, I, V>(
+  mut items: impl FnMut() -> I + 'static,
   key: impl Fn(&T) -> K + 'static,
-  view: impl Fn(T) -> Node + 'static,
-) -> Node {
+  view: impl Fn(T) -> V + 'static,
+) -> Node
+where
+  T: 'static,
+  K: Eq + Hash + Clone + 'static,
+  I: IntoIterator<Item = T>,
+  V: IntoNode,
+{
   let parent = Context::current();
   let container = fragment();
   let end: Node = text("").into();
@@ -448,7 +488,7 @@ pub fn each<T: 'static, K: Eq + Hash + Clone + 'static>(
           let key = &diff.order[at];
           if let Some(item) = fresh.remove(key) {
             let scope = parent.exact_child();
-            let nodes = build_in(&scope, || view(item));
+            let nodes = build_in(&scope, || view(item).into_node());
             rows.insert(key.clone(), Row { scope, nodes });
           }
         }

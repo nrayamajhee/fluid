@@ -216,6 +216,22 @@ div {
   cloned automatically; other non-`Copy` locals a branch uses must be listed.
 - Inside a branch or row, `ctx` refers to that branch's scope.
 
+The same behaviour is available as plain functions, for use in `{ }` or
+outside `html!`; `if` and `for` expand to them:
+
+```rust
+div {
+  // Rebuilt only when the value `select` returns changes.
+  { fluid::show(move || open.value(), |open| if open { panel() } else { summary() }) }
+  // Items, a key for each, and a view (any `IntoNode`) per row.
+  ul { { fluid::each(move || todos.cloned(), |todo| todo.id, todo_item) } }
+}
+```
+
+A plain closure child, `{ move || if open.value() { .. } else { .. } }`,
+works too, but it rebuilds its whole subtree whenever anything it reads
+changes, and a list built that way rebuilds every row.
+
 ## Coming from the original API
 
 The original syntax and API still compile and behave the same (the few
