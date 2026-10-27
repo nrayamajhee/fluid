@@ -10,5 +10,13 @@ mod codegen;
 #[proc_macro]
 pub fn html(item: TokenStream) -> TokenStream {
   let node = parse_macro_input!(item as Node);
-  codegen::build_node(node).into()
+  if node.is_control_flow() {
+    return syn::Error::new(
+      proc_macro2::Span::call_site(),
+      "`if`, `match` and `for` must be inside an element: `div { if .. { .. } }`",
+    )
+    .to_compile_error()
+    .into();
+  }
+  codegen::build_root(node).into()
 }
