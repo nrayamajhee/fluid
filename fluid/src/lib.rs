@@ -1,73 +1,17 @@
 use gloo_timers::callback::Timeout;
 use gloo_utils::window;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::EventTarget;
 
-thread_local! {
-  static EFFECT_STACK: RefCell<Vec<Rc<dyn Fn()>>> = RefCell::new(Vec::new());
-}
-
-pub struct Signal<T> {
-  inner: RefCell<T>,
-  subscribers: RefCell<Vec<Rc<dyn Fn()>>>,
-}
-
-impl<T> Signal<T> {
-  pub fn get(&self) -> Ref<'_, T> {
-    EFFECT_STACK.with(|stack| {
-      if let Some(sub) = stack.borrow().last() {
-        if let Ok(mut subscribers) = self.subscribers.try_borrow_mut() {
-          if !subscribers.iter().any(|existing| Rc::ptr_eq(existing, sub)) {
-            subscribers.push(sub.clone());
-          }
-        }
-      }
-    });
-    self.inner.borrow()
-  }
-  pub fn set(&self, value: T) {
-    *self.inner.borrow_mut() = value;
-    // Clone subscribers to avoid multiple borrows when executing subscriber callbacks
-    let subscribers = self.subscribers.borrow().clone();
-    for sub in subscribers.iter() {
-      EFFECT_STACK.with(|stack| {
-        stack.borrow_mut().push(sub.clone());
-      });
-      sub();
-      EFFECT_STACK.with(|stack| {
-        stack.borrow_mut().pop();
-      });
-    }
-  }
-}
-
-pub struct Context;
-
-impl Context {
-  pub fn new() -> Self {
-    Self
-  }
-  pub fn create_signal<T>(&self, value: T) -> Rc<Signal<T>> {
-    Rc::new(Signal {
-      inner: RefCell::new(value),
-      subscribers: RefCell::new(Vec::new()),
-    })
-  }
-  pub fn create_effect(&self, closure: impl Fn() + 'static) {
-    let closure = Rc::new(closure);
-    EFFECT_STACK.with(|stack| {
-      stack.borrow_mut().push(closure.clone());
-    });
-    closure();
-    EFFECT_STACK.with(|stack| {
-      stack.borrow_mut().pop();
-    });
-  }
-}
+mod reactive;
+pub use reactive::{
+  batch, create_effect, create_memo, has_owner, on_cleanup, provide_context, untrack, use_context,
+  Context, Memo, Signal,
+};
 
 pub fn add_event_and_forget<E>(el: &EventTarget, name: &str, event: E)
 where
