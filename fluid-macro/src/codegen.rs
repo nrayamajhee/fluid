@@ -444,7 +444,11 @@ fn build_element(element: Element, svg: bool) -> TS {
 fn apply(name: &AttrName, value: TS) -> TS {
   let p = private();
   match name {
-    AttrName::Plain(name) => quote! { ::fluid::AttrValue::apply(#value, &__fluid_el, #name); },
+    AttrName::Plain(name) => quote! {{
+      #[allow(unused_imports)]
+      use #p::{AttrViaDeref as _, AttrViaValue as _};
+      (&&&#p::Wrap::new(#value)).__apply(&__fluid_el, #name);
+    }},
     AttrName::Class(classes) => quote! { #p::toggle_class(&__fluid_el, #classes, #value); },
     AttrName::Prop(name) => quote! { #p::set_property(&__fluid_el, #name, #value); },
   }

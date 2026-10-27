@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::ops::Deref;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
@@ -184,6 +185,36 @@ impl<T: AttrValue> AttrValue for Option<T> {
         let _ = element.remove_attribute(name);
       }
     }
+  }
+}
+
+/// Autoref dispatch for attribute values: [`AttrValue`] first, then
+/// anything that derefs twice to a string (`&Ref<String>`, `&Rc<String>`),
+/// which `set_attribute(name, &value)` used to accept by deref coercion.
+#[doc(hidden)]
+pub trait AttrViaValue {
+  fn __apply(&self, element: &Element, name: &str);
+}
+impl<T: AttrValue> AttrViaValue for &&Wrap<T> {
+  fn __apply(&self, element: &Element, name: &str) {
+    self.take().apply(element, name);
+  }
+}
+
+#[doc(hidden)]
+pub trait AttrViaDeref {
+  fn __apply(&self, element: &Element, name: &str);
+}
+impl<T> AttrViaDeref for &Wrap<T>
+where
+  T: Deref,
+  T::Target: Deref,
+  <T::Target as Deref>::Target: AsRef<str>,
+{
+  fn __apply(&self, element: &Element, name: &str) {
+    let value = self.take();
+    let value: &str = (**value).as_ref();
+    set_attribute(element, name, value);
   }
 }
 

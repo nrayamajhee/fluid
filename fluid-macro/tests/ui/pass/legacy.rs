@@ -8,6 +8,8 @@ fn build() -> Result<web_sys::Element, JsValue> {
   let counter = ctx.create_signal(0);
   let label = String::from("Counter");
   let class = "even";
+  let name = ctx.create_signal(String::from("n"));
+  let shared = std::rc::Rc::new(String::from("s"));
   let p = html! {
     div {
       style { r#".odd { color: red; }"# }
@@ -16,10 +18,15 @@ fn build() -> Result<web_sys::Element, JsValue> {
       class=#{ |counter| if *counter.get() % 2 == 0 { "even" } else { "odd" } }
       title={ &label }
       data={ class }
+      name={ &name.get() }
+      lang={ &shared }
+      dir=#{ |name| &name.get() }
       {
         "Counter"
         { " is: " }
         { &label }
+        { &name.get() }
+        { &shared }
         #{ |counter| counter.get().to_string() }
         #{ |counter| &format!("<b>{}</b>", counter.get()) }
       }

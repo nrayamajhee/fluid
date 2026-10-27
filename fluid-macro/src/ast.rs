@@ -417,10 +417,10 @@ fn validate_name(name: &str, span: Span, what: &str) -> syn::Result<()> {
   let valid = name
     .chars()
     .next()
-    .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+    .is_some_and(|first| first.is_alphabetic() || first == '_')
     && name
       .chars()
-      .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'));
+      .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'));
   if valid {
     Ok(())
   } else {
