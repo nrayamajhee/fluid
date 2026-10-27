@@ -352,3 +352,209 @@ fn legacy_get_and_set_still_work() {
   counter.set(next);
   assert_eq!(*seen.borrow(), ["0", "1"]);
 }
+
+fn counting_effect(ctx: &Context, signal: &Rc<Signal<i32>>, calls: &Calls) {
+  let (signal, calls) = (signal.clone(), calls.clone());
+  ctx.create_effect(move || {
+    signal.value();
+    calls.hit();
+  });
+}
+
+#[test]
+fn dispose_stops_effects_and_runs_cleanups_in_reverse_once() {
+  let ctx = Context::new();
+  let count = ctx.create_signal(0);
+  let calls = Calls::default();
+  counting_effect(&ctx, &count, &calls);
+  let seen = log();
+  for name in ["first", "second"] {
+    let seen = seen.clone();
+    ctx.on_cleanup(move || seen.borrow_mut().push(name.to_string()));
+  }
+  ctx.dispose();
+  ctx.dispose();
+  count.set(1);
+  assert_eq!(calls.get(), 1);
+  assert_eq!(*seen.borrow(), ["second", "first"]);
+  assert!(ctx.is_disposed());
+}
+
+#[test]
+fn dropping_a_context_keeps_its_effects() {
+  let count = Rc::new(Signal::new(0));
+  let calls = Calls::default();
+  {
+    let ctx = Context::new();
+    counting_effect(&ctx, &count, &calls);
+  }
+  count.set(1);
+  assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn child_scopes_dispose_alone_or_with_their_parent() {
+  let root = Context::new();
+  let count = Rc::new(Signal::new(0));
+  let (a, b, c) = (Calls::default(), Calls::default(), Calls::default());
+  counting_effect(&root, &count, &a);
+  let first = root.child();
+  counting_effect(&first, &count, &b);
+  let second = root.child();
+  counting_effect(&second, &count, &c);
+
+  first.dispose();
+  count.set(1);
+  assert_eq!((a.get(), b.get(), c.get()), (2, 1, 2));
+  root.dispose();
+  count.set(2);
+  assert_eq!((a.get(), b.get(), c.get()), (2, 1, 2));
+  assert!(second.is_disposed());
+}
+
+#[test]
+fn effects_in_a_disposed_scope_never_run() {
+  let ctx = Context::new();
+  ctx.dispose();
+  let calls = Calls::default();
+  counting_effect(&ctx, &Rc::new(Signal::new(0)), &calls);
+  assert_eq!(calls.get(), 0);
+  let memo = ctx.create_memo(|| 7);
+  assert_eq!(memo.value(), 7);
+}
+
+#[test]
+fn cleanups_run_before_an_effect_reruns() {
+  let count = Rc::new(Signal::new(0));
+  let seen = log();
+  {
+    let (count, seen) = (count.clone(), seen.clone());
+    create_effect(move || {
+      let value = count.value();
+      seen.borrow_mut().push(format!("run {value}"));
+      let seen = seen.clone();
+      on_cleanup(move || seen.borrow_mut().push(format!("clean {value}")));
+    });
+  }
+  count.set(1);
+  assert_eq!(*seen.borrow(), ["run 0", "clean 0", "run 1"]);
+}
+
+#[test]
+fn nested_effects_are_disposed_when_the_outer_one_reruns() {
+  let ctx = Context::new();
+  let outer = ctx.create_signal(0);
+  let inner = ctx.create_signal(0);
+  let calls = Calls::default();
+  {
+    let (ctx2, outer, inner, calls) = (ctx.clone(), outer.clone(), inner.clone(), calls.clone());
+    ctx.create_effect(move || {
+      outer.value();
+      // Created through the outer `ctx`, as html! does: still owned by this run.
+      counting_effect(&ctx2, &inner, &calls);
+    });
+  }
+  outer.set(1);
+  outer.set(2);
+  assert_eq!(calls.get(), 3);
+  inner.set(1);
+  assert_eq!(calls.get(), 4, "only the latest inner effect is alive");
+}
+
+#[test]
+fn memos_are_owned_and_stop_when_disposed() {
+  let ctx = Context::new();
+  let count = ctx.create_signal(1);
+  let computed = Calls::default();
+  let double = {
+    let (count, computed) = (count.clone(), computed.clone());
+    ctx.create_memo(move || {
+      computed.hit();
+      count.value() * 2
+    })
+  };
+  ctx.dispose();
+  count.set(5);
+  assert_eq!(double.value(), 2);
+  assert_eq!(computed.get(), 1);
+}
+
+#[test]
+fn context_values_are_found_up_the_chain() {
+  #[derive(Clone, PartialEq, Debug)]
+  struct Theme(&'static str);
+
+  let root = Context::new();
+  root.provide_context(Theme("dark"));
+  root.provide_context(Rc::new(5u8));
+  let child = root.child();
+  assert_eq!(child.use_context::<Theme>(), Some(Theme("dark")));
+  assert_eq!(child.use_context::<Rc<u8>>().as_deref(), Some(&5));
+  assert_eq!(child.use_context::<String>(), None);
+
+  let grandchild = child.child();
+  grandchild.provide_context(Theme("light"));
+  assert_eq!(grandchild.use_context::<Theme>(), Some(Theme("light")));
+  assert_eq!(child.use_context::<Theme>(), Some(Theme("dark")));
+
+  assert_eq!(use_context::<Theme>(), None, "no current scope");
+  let found = grandchild.run(|| use_context::<Theme>());
+  assert_eq!(found, Some(Theme("light")));
+  let seen = Rc::new(RefCell::new(None));
+  {
+    let seen = seen.clone();
+    child.run(|| create_effect(move || *seen.borrow_mut() = use_context::<Theme>()));
+  }
+  assert_eq!(*seen.borrow(), Some(Theme("dark")));
+}
+
+#[test]
+fn run_makes_free_functions_use_the_scope() {
+  let ctx = Context::new();
+  let count = ctx.create_signal(0);
+  let calls = Calls::default();
+  let cleaned = Calls::default();
+  ctx.run(|| {
+    let (count, calls) = (count.clone(), calls.clone());
+    create_effect(move || {
+      count.value();
+      calls.hit();
+    });
+    let cleaned = cleaned.clone();
+    on_cleanup(move || cleaned.hit());
+    assert!(has_owner());
+  });
+  assert!(!has_owner());
+  ctx.dispose();
+  count.set(1);
+  assert_eq!((calls.get(), cleaned.get()), (1, 1));
+}
+
+#[test]
+fn an_effect_may_dispose_its_own_scope() {
+  let ctx = Context::new();
+  let count = ctx.create_signal(0);
+  let calls = Calls::default();
+  {
+    let (scope, count, calls) = (ctx.clone(), count.clone(), calls.clone());
+    ctx.create_effect(move || {
+      calls.hit();
+      if count.value() == 1 {
+        scope.dispose();
+      }
+    });
+  }
+  count.set(1);
+  count.set(2);
+  assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn disposed_effects_unsubscribe() {
+  let ctx = Context::new();
+  let count = Rc::new(Signal::new(0));
+  counting_effect(&ctx, &count, &Calls::default());
+  assert_eq!(count.source.observers.borrow().len(), 1);
+  ctx.dispose();
+  assert_eq!(count.source.observers.borrow().len(), 0);
+}
