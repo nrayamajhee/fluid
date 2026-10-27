@@ -320,9 +320,14 @@ render escaped HTML. It is documented as legacy, equivalent to `#html{}`.
   root in a thread-local list so it lives until `dispose()`.
 - A thread-local _current owner_ is set while a node runs, inside
   `ctx.run(..)`, and while a control-flow branch is built.
-- `ctx.create_effect` attaches to the innermost of {`ctx`, current owner} when
-  they are on the same chain, else to `ctx`. That keeps explicit scopes
-  explicit while still disposing effects created by an effect's re-run.
+- `ctx.create_effect` attaches to the current owner when it is inside `ctx`,
+  or when `ctx` is a root (apps pass their one root `ctx` everywhere, so it
+  stands for "wherever this runs"); otherwise to `ctx`. That keeps explicit
+  child scopes explicit, while effects created through a captured root `ctx`
+  during an effect's re-run (legacy `#{}` inside a reactive child) are still
+  disposed before the next run instead of piling up.
+- To make a whole tree disposable, build it inside `ctx.run(|| html! {..})`:
+  every form, legacy or new, then belongs to `ctx`.
 - Free functions (`fluid::create_effect`, `on_cleanup`, `use_context`, …) use
   the current owner, falling back to a detached root (never disposed — today's
   behaviour).

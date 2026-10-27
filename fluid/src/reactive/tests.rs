@@ -558,3 +558,64 @@ fn disposed_effects_unsubscribe() {
   ctx.dispose();
   assert_eq!(count.source.observers.borrow().len(), 0);
 }
+
+#[test]
+fn a_root_context_defers_to_the_running_scope() {
+  // html! at top level: a reactive child (owned by no ctx) re-renders and
+  // its legacy `#{}` effects are created through the root `ctx`.
+  let ctx = Context::new();
+  let outer = ctx.create_signal(0);
+  let inner = ctx.create_signal(0);
+  let calls = Calls::default();
+  {
+    let (ctx, outer, inner, calls) = (ctx.clone(), outer.clone(), inner.clone(), calls.clone());
+    create_effect(move || {
+      outer.value();
+      counting_effect(&ctx, &inner, &calls);
+    });
+  }
+  outer.set(1);
+  outer.set(2);
+  inner.set(1);
+  assert_eq!(calls.get(), 4, "earlier inner effects were disposed");
+}
+
+#[test]
+fn an_explicit_child_scope_is_respected_inside_effects() {
+  let root = Context::new();
+  let child = root.child();
+  let trigger = root.create_signal(0);
+  let count = root.create_signal(0);
+  let calls = Calls::default();
+  {
+    let (child, trigger, count, calls) =
+      (child.clone(), trigger.clone(), count.clone(), calls.clone());
+    create_effect(move || {
+      if trigger.value() == 0 {
+        counting_effect(&child, &count, &calls);
+      }
+    });
+  }
+  trigger.set(1);
+  count.set(1);
+  assert_eq!(
+    calls.get(),
+    2,
+    "the child's effect outlives the effect that made it"
+  );
+  child.dispose();
+  count.set(2);
+  assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn root_context_values_are_found_from_unrelated_scopes() {
+  let ctx = Context::new();
+  ctx.provide_context(3u8);
+  let seen = Rc::new(Cell::new(None));
+  {
+    let (ctx, seen) = (ctx.clone(), seen.clone());
+    create_effect(move || seen.set(ctx.use_context::<u8>()));
+  }
+  assert_eq!(seen.get(), Some(3));
+}

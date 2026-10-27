@@ -647,11 +647,15 @@ impl Context {
     }
   }
 
-  /// Where things created through this context go: the current scope if it
-  /// is inside this one (an effect re-running inside `self`), else `self`.
+  /// Where things created through this context go: the running scope if
+  /// it is inside this one (an effect re-running inside `self`) or if `self`
+  /// is a root, which apps pass everywhere and so stands for "the current
+  /// scope"; otherwise `self`.
   fn target(&self) -> Rc<Owner> {
     match current_owner() {
-      Some(current) if current.is_within(&self.owner) => current,
+      Some(current) if current.is_within(&self.owner) || self.owner.parent.upgrade().is_none() => {
+        current
+      }
       _ => self.owner.clone(),
     }
   }
@@ -698,8 +702,9 @@ impl Context {
       .push((TypeId::of::<T>(), Rc::new(value)));
   }
 
+  /// Looks up a value from the running scope's chain, then this one's.
   pub fn use_context<T: Clone + 'static>(&self) -> Option<T> {
-    self.target().lookup()
+    self.target().lookup().or_else(|| self.owner.lookup())
   }
 }
 
