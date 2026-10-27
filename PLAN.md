@@ -1,5 +1,8 @@
 # fluid roadmap
 
+> Status: phases (a)–(e) are implemented on `claude/fluid-roadmap`; (f) is
+> future work. See the PR for the checklist.
+
 fluid was used to port the "Device" synth UI of `nrayamajhee/studio` to a Trunk
 wasm app (`web-rust/`). That port, together with `nrayamajhee/wgpu-test`
 (`src/ui/pause_menu.rs`), is the real-world reference for this plan. Every item
@@ -433,5 +436,12 @@ Nothing that compiles today should stop compiling, with these caveats:
    warnings.
 4. **Effect signature**: `create_effect` takes `impl FnMut()` instead of
    `impl Fn()` — strictly more permissive.
+5. **Duplicate attributes** (`div class="a" class="b"`) are now a compile
+   error instead of a silent, order-dependent overwrite. Migration: delete
+   the one you didn't mean.
+6. **Attribute values** are matched by trait instead of `&str` deref
+   coercion. Everything that coerced to `&str` within two derefs still works
+   (`&String`, `&Rc<String>`, `&signal.get()`); a deeper chain needs an
+   explicit `.as_str()`.
 
 Both downstream apps are compile-checked against this branch (see the PR).
