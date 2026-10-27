@@ -20,6 +20,8 @@ features = [
 	"HtmlInputElement",
 	"KeyboardEvent",
 	"MouseEvent",
+	"Node",
+	"WheelEvent",
 ]
 
 [dependencies]
@@ -30,3 +32,4 @@ fluid = { path = "../fluid" }
 fluid-macro = { path = "../fluid-macro" }
 gloo-console = "0.3.0"
 gloo-utils = "0.2.0"
+gloo-timers = "0.3.0"
