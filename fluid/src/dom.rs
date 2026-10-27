@@ -552,12 +552,22 @@ pub fn listen<E: JsCast + 'static>(
   let name = name.into();
   let closure =
     Closure::<dyn FnMut(JsValue)>::new(move |event: JsValue| handler(event.unchecked_into::<E>()));
-  let js_options = web_sys::AddEventListenerOptions::new();
-  js_options.set_capture(options.capture);
-  js_options.set_once(options.once);
+  // A plain object, because web-sys before 0.3.70 has no `set_*` setters and
+  // later versions deprecate the builder methods older ones have.
+  let js_options = js_sys::Object::new();
+  let set = |key: &str, value: bool| {
+    let _ = js_sys::Reflect::set(
+      &js_options,
+      &JsValue::from_str(key),
+      &JsValue::from_bool(value),
+    );
+  };
+  set("capture", options.capture);
+  set("once", options.once);
   if let Some(passive) = options.passive {
-    js_options.set_passive(passive);
+    set("passive", passive);
   }
+  let js_options: web_sys::AddEventListenerOptions = js_options.unchecked_into();
   let _ = target.add_event_listener_with_callback_and_add_event_listener_options(
     &name,
     closure.as_ref().unchecked_ref(),
