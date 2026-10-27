@@ -28,11 +28,3 @@ features = [
   "Text",
   "Window",
 ]
-
-[dev-dependencies]
-fluid-macro = { path = "../fluid-macro" }
-wasm-bindgen-test = "0.3"
-
-[dev-dependencies.web-sys]
-version = "0.3.64"
-features = ["EventInit", "HtmlCollection", "HtmlInputElement", "MouseEvent", "MouseEventInit"]

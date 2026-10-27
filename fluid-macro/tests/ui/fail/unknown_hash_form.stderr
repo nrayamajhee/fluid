@@ -1,5 +1,0 @@
-error: expected `#{ |..| }`, `#text{ |..| }` or `#html{ |..| }`
- --> tests/ui/fail/unknown_hash_form.rs:4:26
-  |
-4 |   let _ = html! { div { #markdown{ |x| x } } };
-  |                          ^^^^^^^^

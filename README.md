@@ -248,11 +248,16 @@ Also kept: `fluid::add_event_and_forget`, `fluid::now()` and
 
 ## Testing
 
+fluid's only tests are component tests of the example
+([`fluid-example/src/tests.rs`](fluid-example/src/tests.rs)): each section is
+mounted on its own in headless Chrome and driven like a user would (typing,
+clicking, scrolling, keys), then the DOM is checked.
+
 ```sh
-cargo test                      # reactive core, keyed-list logic, macro (trybuild)
-cargo test -p fluid --target wasm32-unknown-unknown   # DOM tests, headless
+cargo test -p fluid-example --target wasm32-unknown-unknown
 ```
 
-The DOM tests run in headless Chrome through `wasm-bindgen-test-runner`
-(`cargo install wasm-bindgen-cli --version <the locked wasm-bindgen>`), which
-needs a `chromedriver` matching the installed Chrome (`CHROMEDRIVER=...`).
+They run through `wasm-bindgen-test-runner`
+(`cargo install wasm-bindgen-cli --version <the locked wasm-bindgen>`),
+which needs a `chromedriver` matching the installed Chrome
+(`CHROMEDRIVER=...`).

@@ -1,5 +1,5 @@
 //! The DOM-free reactive core: signals, effects, memos, batching and owner
-//! scopes. Everything here runs natively, so it is tested with `cargo test`.
+//! scopes.
 //!
 //! Writes use push-pull colouring: a write marks its direct observers
 //! `Dirty` and everything downstream of a memo `Check`, queueing effects.
@@ -707,6 +707,3 @@ impl Context {
     self.target().lookup().or_else(|| self.owner.lookup())
   }
 }
-
-#[cfg(test)]
-mod tests;

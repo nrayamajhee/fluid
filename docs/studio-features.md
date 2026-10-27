@@ -368,19 +368,14 @@ Each phase is one or more commits on `claude/fluid-roadmap`.
 Signal methods from §6, `batch`, `untrack`, `create_memo`, new reactive core
 (colouring, queue, re-tracking).
 _Risk_: changing effect scheduling (writes inside an effect are now deferred
-until it returns instead of re-entering). _Tests_: native `cargo test` on the
-core: notification, equality skipping, batching runs effects once, diamond
-dependencies are glitch-free, memo cut-off, dynamic dependency re-tracking,
-writes inside effects, BorrowMut safety of `update`/`with`.
+until it returns instead of re-entering).
 
 ### (b) Owner scopes, disposal, context values
 
 `Context` as owner handle, `child`, `dispose`, `on_cleanup`, `run`,
 `provide_context`/`use_context`, nested-effect disposal on re-run.
 _Risk_: lifetime regressions (things disposed too early). Mitigated by never
-disposing on drop. _Tests_: native: disposed effects stop, cleanups run once
-in reverse order, nested effects are disposed on parent re-run, context
-lookup through the chain, a dropped `Context` keeps its effects.
+disposing on drop.
 
 ### (c) `html!` grammar
 
@@ -388,24 +383,27 @@ Node children, Display text, `#text`/`#html`, attribute names, ordered attrs
 with duplicate errors, `AttrValue`, `prop:`, class toggles, SVG namespace,
 typed events + modifiers + owner-tied listeners.
 _Risk_: dispatch changes for `{ expr }`/attribute values; covered by keeping
-every previously-accepted type producing identical calls. _Tests_: `trybuild`
-pass/fail cases (duplicates, bad names, reactive class + toggles; a
-`legacy.rs` case that also compiles against `main`), headless
-`wasm-bindgen-test` for DOM output, and building studio and wgpu-test
-against the branch with `[patch]` before merging.
+every previously-accepted type producing identical calls, and by building
+studio and wgpu-test against the branch with `[patch]` before merging.
 
 ### (d) Control flow
 
-`if`/`else if`/`else`, `match`, keyed `for`, comment anchors, branch scopes.
-_Risk_: DOM region bookkeeping bugs (wrong order after moves). _Tests_: the
-keyed reconciliation is a pure function over key lists, tested natively
-(insert/remove/move/shuffle, duplicate keys); DOM behaviour in
-`wasm-bindgen-test`.
+`if`/`else if`/`else`, `match`, keyed `for`, region anchors, branch scopes.
+_Risk_: DOM region bookkeeping bugs (wrong order after moves).
 
 ### (e) Hygiene and cleanup
 
 Qualified paths, no `?`/`.expect`, unused-capture warnings, drop `maud`,
 README + example updates, clippy/fmt clean.
+
+### Tests
+
+fluid is tested only through its example: `fluid-example/src/tests.rs`
+mounts each section of the example (Counter, Todos, Level, Scopes,
+Children) in headless Chromium and drives it as a user would, checking the
+DOM. Each phase is covered by the sections that use it: signals, memos and
+`batch` by Counter and Todos; scopes, cleanups and listener removal by
+Scopes and Level; the `html!` grammar and control flow by all of them.
 
 ### (f) Later / not in this PR
 

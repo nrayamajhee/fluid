@@ -213,11 +213,14 @@ fn level_meter(ctx: &Context) -> Element {
       ListenerOptions::new(),
       move |e: KeyboardEvent| {
         let current = i32::from(level.value());
-        match e.key().as_str() {
-          "ArrowUp" => set(current + 1),
-          "ArrowDown" => set(current - 1),
-          _ => {}
-        }
+        let by = match e.key().as_str() {
+          "ArrowUp" => 1,
+          "ArrowDown" => -1,
+          _ => return,
+        };
+        // The arrows turn the level instead of scrolling the page.
+        e.prevent_default();
+        set(current + by);
       },
     )
     .owned();
@@ -372,6 +375,9 @@ pub async fn async_main() -> Result<(), JsValue> {
   body().append_child(&app)?;
   Ok(())
 }
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests;
 
 fn main() {
   wasm_bindgen_futures::spawn_local(async move {
