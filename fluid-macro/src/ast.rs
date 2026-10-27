@@ -316,13 +316,14 @@ impl Parse for Attr {
       let content;
       braced!(content in input);
       let handler: TokenStream = content.parse()?;
-      let event_type = match syn::parse2::<Expr>(handler.clone()) {
-        Ok(Expr::Closure(closure)) => closure.inputs.first().and_then(|input| match input {
-          syn::Pat::Type(typed) => Some(typed.ty.clone()),
+      let event_type = syn::parse2::<Expr>(handler.clone())
+        .ok()
+        .as_ref()
+        .and_then(final_closure)
+        .and_then(|closure| match closure.inputs.first() {
+          Some(Pat::Type(typed)) => Some(typed.ty.clone()),
           _ => None,
-        }),
-        _ => None,
-      };
+        });
       return Ok(Attr::Event {
         name,
         modifiers,
@@ -515,17 +516,23 @@ fn parse_reactive(content: ParseStream) -> syn::Result<Reactive> {
   Ok(Reactive { captures, expr })
 }
 
-/// `move || expr`, or a block ending in one (`{ let a = a.clone(); move || .. }`).
-fn is_closure_literal(tokens: &TokenStream) -> bool {
-  fn check(expr: &Expr) -> bool {
-    match expr {
-      Expr::Closure(closure) => closure.inputs.is_empty(),
-      Expr::Block(block) => matches!(
-        block.block.stmts.last(),
-        Some(syn::Stmt::Expr(expr, None)) if check(expr)
-      ),
-      _ => false,
-    }
+/// A closure, or the closure a block ends in (`{ let a = a.clone(); move || .. }`).
+fn final_closure(expr: &Expr) -> Option<&syn::ExprClosure> {
+  match expr {
+    Expr::Closure(closure) => Some(closure),
+    Expr::Block(block) => match block.block.stmts.last() {
+      Some(syn::Stmt::Expr(expr, None)) => final_closure(expr),
+      _ => None,
+    },
+    _ => None,
   }
-  syn::parse2::<Expr>(tokens.clone()).is_ok_and(|expr| check(&expr))
+}
+
+/// A closure with no parameters, possibly at the end of a block.
+fn is_closure_literal(tokens: &TokenStream) -> bool {
+  syn::parse2::<Expr>(tokens.clone())
+    .ok()
+    .as_ref()
+    .and_then(final_closure)
+    .is_some_and(|closure| closure.inputs.is_empty())
 }

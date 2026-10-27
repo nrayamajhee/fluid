@@ -17,6 +17,9 @@ features = [
 	"Document",
 	"Element",
 	"HtmlElement",
+	"HtmlInputElement",
+	"KeyboardEvent",
+	"MouseEvent",
 ]
 
 [dependencies]
