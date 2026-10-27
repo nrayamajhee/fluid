@@ -7,7 +7,7 @@ https://github.com/rustwasm/wasm-bindgen/issues/2853
 Inspired by <https://youtu.be/J70HXl1KhWE?t=202>
 
 fluid is two crates: `fluid` (signals, effects, memos, owner scopes and the
-DOM helpers) and `fluid-macro` (the `html!` macro). See [PLAN.md](PLAN.md)
+DOM helpers) and `fluid-macro` (the `html!` macro). See [docs/studio-features.md](docs/studio-features.md)
 for the roadmap and design.
 
 [Example](#example) · [Signals](#signals-effects-and-memos) ·
@@ -218,7 +218,7 @@ div {
 ## Coming from the original API
 
 The original syntax and API still compile and behave the same (the few
-edge cases are listed in [PLAN.md](PLAN.md#compatibility-summary)); these
+edge cases are listed in [docs/studio-features.md](docs/studio-features.md#compatibility-summary)); these
 are the newer ways to write common things.
 
 | before                                                    | now                                                  |
