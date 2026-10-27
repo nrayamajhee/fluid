@@ -1,0 +1,29 @@
+error[E0599]: the method `__child` exists for reference `&&&fluid::dom::Wrap<Opaque>`, but its trait bounds were not satisfied
+ --> tests/ui/fail/not_a_child.rs:6:11
+  |
+3 | struct Opaque;
+  | ------------- doesn't satisfy `Opaque: IntoNode`, `Opaque: std::fmt::Display` or `_: AsRef<Node>`
+...
+6 |   let _ = html! { div { { Opaque } } };
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method cannot be called on `&&&fluid::dom::Wrap<Opaque>` due to unsatisfied trait bounds
+  |
+ ::: $WORKSPACE/fluid/src/dom.rs
+  |
+  | pub struct Wrap<T>(Cell<Option<T>>);
+  | ------------------ doesn't satisfy `fluid::dom::Wrap<Opaque>: fluid::dom::ViaDisplay`
+  |
+  = note: the following trait bounds were not satisfied:
+          `Opaque: IntoNode`
+          which is required by `&&fluid::dom::Wrap<Opaque>: fluid::dom::ViaIntoNode`
+          `Opaque: AsRef<fluid::__private::web_sys::features::gen_Node::Node>`
+          which is required by `&fluid::dom::Wrap<Opaque>: fluid::dom::ViaAsNode`
+          `Opaque: std::fmt::Display`
+          which is required by `fluid::dom::Wrap<Opaque>: fluid::dom::ViaDisplay`
+note: the traits `AsRef`, `IntoNode`,  and `std::fmt::Display` must be implemented
+ --> $WORKSPACE/fluid/src/dom.rs
+  |
+  | pub trait IntoNode {
+  | ^^^^^^^^^^^^^^^^^^
+ --> $RUST/core/src/convert/mod.rs
+ --> $RUST/core/src/fmt/mod.rs
+  = note: this error originates in the macro `html` (in Nightly builds, run with -Z macro-backtrace for more info)

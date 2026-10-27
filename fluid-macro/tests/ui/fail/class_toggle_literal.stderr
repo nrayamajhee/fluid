@@ -1,0 +1,5 @@
+error: a class toggle takes a `bool`, e.g. `class:hidden={ closed }`
+ --> tests/ui/fail/class_toggle_literal.rs:4:36
+  |
+4 |   let _ = html! { div class:hidden="true" {} };
+  |                                    ^^^^^^

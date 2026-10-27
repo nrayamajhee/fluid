@@ -4,5 +4,7 @@ resolver = "2"
 members = [
     "fluid",
     "fluid-macro",
-    "fluid-example"
+    "fluid-example",
+    "compat/studio",
+    "compat/wgpu-test",
 ]

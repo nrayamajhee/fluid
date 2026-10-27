@@ -1,0 +1,5 @@
+error: `bad name` is not a valid attribute name
+ --> tests/ui/fail/bad_names.rs:4:23
+  |
+4 |   let _ = html! { div "bad name"="x" {} };
+  |                       ^^^^^^^^^^

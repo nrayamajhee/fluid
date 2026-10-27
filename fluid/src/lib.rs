@@ -7,7 +7,9 @@ use wasm_bindgen::prelude::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::EventTarget;
 
+pub mod dom;
 mod reactive;
+pub use dom::{listen, AttrValue, IntoNode, Listener, ListenerOptions};
 pub use reactive::{
   batch, create_effect, create_memo, has_owner, on_cleanup, provide_context, untrack, use_context,
   Context, Memo, Signal,
@@ -56,4 +58,15 @@ pub fn on_animation_frame(mut closure: impl FnMut(f64) + 'static, fps: Option<f6
   *g.borrow_mut() = Some(closure);
   *t.borrow_mut() = now();
   request_animation_frame(g.borrow().as_ref().unwrap());
+}
+
+/// Used by `html!`'s generated code; not part of the public API.
+#[doc(hidden)]
+pub mod __private {
+  pub use crate::dom::{
+    append, dynamic, element, on, set_attribute, set_property, svg_element, text, toggle_class,
+    Child, ViaAsNode, ViaDisplay, ViaIntoNode, Wrap,
+  };
+  pub use wasm_bindgen;
+  pub use web_sys;
 }

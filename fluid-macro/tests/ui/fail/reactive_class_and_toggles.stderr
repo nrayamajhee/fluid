@@ -1,0 +1,5 @@
+error: a reactive `class` would overwrite `class:` toggles; use a static `class` with toggles
+ --> tests/ui/fail/reactive_class_and_toggles.rs:5:45
+  |
+5 |   let _ = html! { div class={ move || "a" } class:b={ true } {} };
+  |                                             ^^^^^

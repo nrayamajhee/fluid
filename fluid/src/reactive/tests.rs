@@ -498,7 +498,7 @@ fn context_values_are_found_up_the_chain() {
   assert_eq!(child.use_context::<Theme>(), Some(Theme("dark")));
 
   assert_eq!(use_context::<Theme>(), None, "no current scope");
-  let found = grandchild.run(|| use_context::<Theme>());
+  let found = grandchild.run(use_context::<Theme>);
   assert_eq!(found, Some(Theme("light")));
   let seen = Rc::new(RefCell::new(None));
   {

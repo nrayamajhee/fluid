@@ -10,5 +10,5 @@ mod codegen;
 #[proc_macro]
 pub fn html(item: TokenStream) -> TokenStream {
   let node = parse_macro_input!(item as Node);
-  codegen::build_node(node).into()
+  codegen::build_root(node).into()
 }

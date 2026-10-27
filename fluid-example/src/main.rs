@@ -2,7 +2,6 @@ use fluid::Context;
 use fluid_macro::html;
 use gloo_utils::body;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 
 pub async fn async_main() -> Result<(), JsValue> {
   let ctx = Context::new();

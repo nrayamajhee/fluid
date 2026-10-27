@@ -9,6 +9,11 @@ proc-macro = true
 [dependencies]
 maud = "0.25.0"
 quote = "1.0.33"
-syn = "2.0.37"
-fluid = { path = "../fluid" }
+syn = { version = "2.0.37", features = ["full"] }
 proc-macro2 = "1.0.67"
+
+[dev-dependencies]
+fluid = { path = "../fluid" }
+trybuild = "1"
+wasm-bindgen = "0.2.87"
+web-sys = { version = "0.3.64", features = ["MouseEvent", "PointerEvent", "WheelEvent", "KeyboardEvent"] }
