@@ -70,5 +70,30 @@ fn path() -> Element {
 }
 
 fn main() {
-  let _ = (build, path);
+  let _ = (build, path, control_flow);
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+  Idle,
+  Playing(u8),
+}
+
+fn control_flow(open: Rc<Signal<bool>>, mode: Rc<Signal<Mode>>, items: Rc<Signal<Vec<(u32, String)>>>) -> Element {
+  html! {
+    div {
+      if |open| open.value() { "open" } else { "closed" }
+      if |open| !open.value() { "only when closed" }
+      match |mode| mode.value() {
+        Mode::Idle => { "idle" }
+        Mode::Playing(n) => { { n } }
+      }
+      ul {
+        for |items, open| (id, name) in items.cloned(), key = *id {
+          li class:open=#{ |open| open.value() } { { id } ": " { name.clone() } }
+        }
+      }
+      svg { if |open| open.value() { circle r="1" {} } }
+    }
+  }
 }

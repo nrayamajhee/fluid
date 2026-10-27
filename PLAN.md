@@ -402,6 +402,9 @@ README + example updates, clippy/fmt clean.
 
 - Copy signal handles (arena-backed `ReadSignal`/`WriteSignal`) so closures
   don't need clones at all.
+- Keyed-list moves via a longest-increasing-subsequence pass (today's
+  backward walk is correct but can move more rows than needed, e.g. a
+  rotation).
 - Non-keyed `for` over indices, `Show`/`Suspense`-style async helpers.
 - Server-side rendering.
 

@@ -3,14 +3,17 @@
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::Hash;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{Comment, DocumentFragment, Element, Event, EventTarget, HtmlElement, Node, Text};
 
-use crate::reactive::{create_effect, has_owner, on_cleanup};
+use crate::list::{self, Siblings};
+use crate::reactive::{create_effect, has_owner, on_cleanup, untrack, Context};
 
 pub const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
@@ -306,6 +309,131 @@ pub fn dynamic(mut render: impl FnMut() -> Child + 'static) -> Node {
   }
   let nodes = nodes.borrow();
   gather(&nodes)
+}
+
+#[doc(hidden)]
+pub fn fragment() -> DocumentFragment {
+  document().create_document_fragment()
+}
+
+/// Builds a branch or row in its own scope, without tracking what it reads.
+fn build_in(scope: &Context, build: impl FnOnce() -> Node) -> Vec<Node> {
+  flatten(scope.run(|| untrack(build)))
+}
+
+/// A branch builder for [`switch`].
+#[doc(hidden)]
+pub type Branch = Box<dyn FnOnce() -> Node>;
+
+/// `if`/`match`: `select` names the chosen arm, whether it binds values,
+/// and how to build it. The region is rebuilt in a fresh scope when the arm
+/// changes, or on every change for arms that bind values.
+#[doc(hidden)]
+pub fn switch(mut select: impl FnMut() -> (usize, bool, Branch) + 'static) -> Node {
+  let parent = Context::current();
+  let nodes: Rc<RefCell<Vec<Node>>> = Rc::default();
+  let shown: Rc<RefCell<Option<(usize, Context)>>> = Rc::default();
+  {
+    let nodes = nodes.clone();
+    create_effect(move || {
+      let (arm, binds, build) = select();
+      if !binds && matches!(&*shown.borrow(), Some((current, _)) if *current == arm) {
+        return;
+      }
+      let old = shown.borrow_mut().take();
+      if let Some((_, scope)) = old {
+        scope.dispose();
+      }
+      let scope = parent.exact_child();
+      let next = build_in(&scope, build);
+      replace(&mut nodes.borrow_mut(), next);
+      *shown.borrow_mut() = Some((arm, scope));
+    });
+  }
+  let nodes = nodes.borrow();
+  gather(&nodes)
+}
+
+struct Row {
+  scope: Context,
+  nodes: Vec<Node>,
+}
+
+/// A parent's children, for [`list::arrange`].
+struct Dom(Node);
+
+impl Siblings for Dom {
+  type Node = Node;
+  fn next_sibling(&self, node: &Node) -> Option<Node> {
+    node.next_sibling()
+  }
+  fn same(&self, a: &Node, b: &Node) -> bool {
+    a.is_same_node(Some(b))
+  }
+  fn insert_before(&mut self, node: &Node, before: &Node) {
+    let _ = self.0.insert_before(node, Some(before));
+  }
+}
+
+/// A keyed list: rows are built once per key, removed with their scope when
+/// the key goes, and moved (not rebuilt) when the order changes. Later
+/// duplicates of a key are skipped.
+#[doc(hidden)]
+pub fn each<T: 'static, K: Eq + Hash + Clone + 'static>(
+  mut items: impl FnMut() -> Vec<T> + 'static,
+  key: impl Fn(&T) -> K + 'static,
+  view: impl Fn(T) -> Node + 'static,
+) -> Node {
+  let parent = Context::current();
+  let container = fragment();
+  let end: Node = text("").into();
+  append(&container, &end);
+  let rows: Rc<RefCell<HashMap<K, Row>>> = Rc::default();
+  let order: Rc<RefCell<Vec<K>>> = Rc::default();
+  {
+    let end = end.clone();
+    create_effect(move || {
+      let items = items();
+      untrack(|| {
+        let mut rows = rows.borrow_mut();
+        let mut order = order.borrow_mut();
+        let keyed: Vec<(K, T)> = items.into_iter().map(|item| (key(&item), item)).collect();
+        let diff = list::diff(&order, keyed.iter().map(|(key, _)| key.clone()));
+        let mut fresh: HashMap<K, T> = HashMap::new();
+        for (key, item) in keyed {
+          fresh.entry(key).or_insert(item);
+        }
+        for gone in &diff.removed {
+          if let Some(row) = rows.remove(gone) {
+            row.scope.dispose();
+            for node in &row.nodes {
+              if let Some(parent) = node.parent_node() {
+                let _ = parent.remove_child(node);
+              }
+            }
+          }
+        }
+        for &at in &diff.added {
+          let key = &diff.order[at];
+          if let Some(item) = fresh.remove(key) {
+            let scope = parent.exact_child();
+            let nodes = build_in(&scope, || view(item));
+            rows.insert(key.clone(), Row { scope, nodes });
+          }
+        }
+        if let Some(parent) = end.parent_node() {
+          let placed: Vec<&[Node]> = diff
+            .order
+            .iter()
+            .filter_map(|key| rows.get(key).map(|row| row.nodes.as_slice()))
+            .collect();
+          list::arrange(&mut Dom(parent), &placed, &end);
+        }
+        *order = diff.order;
+      });
+    });
+  }
+  container.into()
 }
 
 /// `addEventListener` options.

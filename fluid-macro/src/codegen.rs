@@ -1,7 +1,9 @@
 use proc_macro2::TokenStream as TS;
 use quote::{quote, quote_spanned};
 
-use crate::ast::{Attr, AttrName, AttrValue, Element, Node, Reactive};
+use syn::{Ident, Pat};
+
+use crate::ast::{Arm, Attr, AttrName, AttrValue, Element, Node, Reactive};
 
 /// Elements that only exist in SVG, created in its namespace even at the
 /// root of an `html!` (outside an `svg`).
@@ -83,6 +85,13 @@ fn build_child(node: Node, svg: bool) -> TS {
   match node {
     Node::Text(text) => quote! { #p::text(#text) },
     Node::Expr(expr) => {
+      // A bare expression keeps its temporaries alive for the whole call, as
+      // before; statements (`{ a; b }`) need their own block.
+      let expr = if syn::parse2::<syn::Expr>(expr.clone()).is_ok() {
+        expr
+      } else {
+        quote! {{ #expr }}
+      };
       let child = to_child(expr);
       quote! { #child.into_node() }
     }
@@ -131,6 +140,272 @@ fn build_child(node: Node, svg: bool) -> TS {
       }}
     }
     Node::Element(element) => build_element(element, svg),
+    Node::If {
+      captures,
+      branches,
+      otherwise,
+    } => {
+      let mut names = captures;
+      for (_, children) in &branches {
+        names.extend(nested_captures(children));
+      }
+      if let Some(children) = &otherwise {
+        names.extend(nested_captures(children));
+      }
+      let names = dedup(names);
+      let clones = clone_captures(&names);
+      let count = branches.len();
+      let arms = branches
+        .into_iter()
+        .enumerate()
+        .map(|(index, (cond, children))| {
+          let branch = build_branch(children, &names, svg);
+          quote! { if #cond { (#index, false, #branch) } }
+        });
+      let otherwise = build_branch(otherwise.unwrap_or_default(), &names, svg);
+      quote! {{
+        #clones
+        #p::switch(move || #(#arms else)* { (#count, false, #otherwise) })
+      }}
+    }
+    Node::Match {
+      captures,
+      expr,
+      arms,
+    } => {
+      let mut names = captures;
+      for arm in &arms {
+        let bound = bindings(&arm.pat);
+        names.extend(
+          nested_captures(&arm.children)
+            .into_iter()
+            .filter(|name| !bound.contains(name)),
+        );
+      }
+      let names = dedup(names);
+      let clones = clone_captures(&names);
+      let arms = arms.into_iter().enumerate().map(
+        |(
+          index,
+          Arm {
+            pat,
+            guard,
+            children,
+          },
+        )| {
+          let binds = !bindings(&pat).is_empty();
+          let guard = guard.map(|guard| quote! { if #guard });
+          let branch = build_branch(children, &names, svg);
+          quote! { #pat #guard => (#index, #binds, #branch), }
+        },
+      );
+      quote! {{
+        #clones
+        #p::switch(move || match #expr { #(#arms)* })
+      }}
+    }
+    Node::For {
+      captures,
+      pat,
+      items,
+      key,
+      children,
+    } => {
+      let bound = bindings(&pat);
+      let mut names = captures;
+      names.extend(
+        nested_captures(&children)
+          .into_iter()
+          .filter(|name| !bound.contains(name)),
+      );
+      let names = dedup(names);
+      let clones = clone_captures(&names);
+      let row = build_nodes(children, svg);
+      quote! {{
+        let __fluid_items = {
+          #clones
+          move || ::std::iter::IntoIterator::into_iter(#items).collect::<::std::vec::Vec<_>>()
+        };
+        #p::each(
+          __fluid_items,
+          move |__fluid_item: &_| {
+            #[allow(unused_variables)]
+            let #pat = __fluid_item;
+            #key
+          },
+          {
+            #clones
+            move |__fluid_item| {
+              #[allow(unused_variables)]
+              let #pat = __fluid_item;
+              #clones
+              #[allow(unused_variables)]
+              let ctx = &::fluid::Context::current();
+              #row
+            }
+          },
+        )
+      }}
+    }
+  }
+}
+
+/// Several nodes as one `web_sys::Node` (a fragment).
+fn build_nodes(children: Vec<Node>, svg: bool) -> TS {
+  let p = private();
+  let children = children.into_iter().map(|child| build_child(child, svg));
+  quote! {{
+    let __fluid_frag = #p::fragment();
+    #(
+      let __fluid_child = #children;
+      #p::append(&__fluid_frag, &__fluid_child);
+    )*
+    ::std::convert::Into::<#p::web_sys::Node>::into(__fluid_frag)
+  }}
+}
+
+/// A boxed builder for a branch, owning fresh clones of the captures and
+/// binding `ctx` to the branch's scope.
+fn build_branch(children: Vec<Node>, names: &[Ident], svg: bool) -> TS {
+  let p = private();
+  let clones = clone_captures(names);
+  let nodes = build_nodes(children, svg);
+  quote! {{
+    #clones
+    ::std::boxed::Box::new(move || {
+      #[allow(unused_variables)]
+      let ctx = &::fluid::Context::current();
+      #nodes
+    }) as #p::Branch
+  }}
+}
+
+/// Capture names listed anywhere below, minus names bound by inner
+/// patterns: an enclosing branch must clone them too.
+fn nested_captures(nodes: &[Node]) -> Vec<Ident> {
+  let mut names = Vec::new();
+  for node in nodes {
+    match node {
+      Node::Html {
+        reactive: Reactive { captures, .. },
+        ..
+      }
+      | Node::ReactiveText(Reactive { captures, .. }) => names.extend(captures.iter().cloned()),
+      Node::Element(element) => {
+        for attr in &element.attrs {
+          if let Attr::Attr {
+            value: AttrValue::Reactive(Reactive { captures, .. }),
+            ..
+          } = attr
+          {
+            names.extend(captures.iter().cloned());
+          }
+        }
+        names.extend(nested_captures(&element.children));
+      }
+      Node::If {
+        captures,
+        branches,
+        otherwise,
+      } => {
+        names.extend(captures.iter().cloned());
+        for (_, children) in branches {
+          names.extend(nested_captures(children));
+        }
+        if let Some(children) = otherwise {
+          names.extend(nested_captures(children));
+        }
+      }
+      Node::Match { captures, arms, .. } => {
+        names.extend(captures.iter().cloned());
+        for arm in arms {
+          let bound = bindings(&arm.pat);
+          names.extend(
+            nested_captures(&arm.children)
+              .into_iter()
+              .filter(|name| !bound.contains(name)),
+          );
+        }
+      }
+      Node::For {
+        captures,
+        pat,
+        children,
+        ..
+      } => {
+        names.extend(captures.iter().cloned());
+        let bound = bindings(pat);
+        names.extend(
+          nested_captures(children)
+            .into_iter()
+            .filter(|name| !bound.contains(name)),
+        );
+      }
+      Node::Text(_) | Node::Expr(_) | Node::Closure(_) => {}
+    }
+  }
+  names
+}
+
+fn dedup(names: Vec<Ident>) -> Vec<Ident> {
+  let mut unique: Vec<Ident> = Vec::new();
+  for name in names {
+    if !unique.contains(&name) {
+      unique.push(name);
+    }
+  }
+  unique
+}
+
+/// Names a pattern binds. A capitalised bare name (`None`, an imported
+/// variant) is taken to be a constant, not a binding.
+fn bindings(pat: &Pat) -> Vec<Ident> {
+  let mut names = Vec::new();
+  collect_bindings(pat, &mut names);
+  names
+}
+
+fn collect_bindings(pat: &Pat, names: &mut Vec<Ident>) {
+  match pat {
+    Pat::Ident(ident) => {
+      let constant = ident.subpat.is_none()
+        && ident.by_ref.is_none()
+        && ident.mutability.is_none()
+        && ident
+          .ident
+          .to_string()
+          .starts_with(|c: char| c.is_ascii_uppercase());
+      if !constant {
+        names.push(ident.ident.clone());
+      }
+      if let Some((_, sub)) = &ident.subpat {
+        collect_bindings(sub, names);
+      }
+    }
+    Pat::Or(or) => or
+      .cases
+      .iter()
+      .for_each(|case| collect_bindings(case, names)),
+    Pat::Paren(paren) => collect_bindings(&paren.pat, names),
+    Pat::Reference(reference) => collect_bindings(&reference.pat, names),
+    Pat::Slice(slice) => slice
+      .elems
+      .iter()
+      .for_each(|elem| collect_bindings(elem, names)),
+    Pat::Struct(strukt) => strukt
+      .fields
+      .iter()
+      .for_each(|field| collect_bindings(&field.pat, names)),
+    Pat::Tuple(tuple) => tuple
+      .elems
+      .iter()
+      .for_each(|elem| collect_bindings(elem, names)),
+    Pat::TupleStruct(tuple) => tuple
+      .elems
+      .iter()
+      .for_each(|elem| collect_bindings(elem, names)),
+    Pat::Type(typed) => collect_bindings(&typed.pat, names),
+    _ => {}
   }
 }
 

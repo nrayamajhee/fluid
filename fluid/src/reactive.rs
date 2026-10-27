@@ -640,6 +640,13 @@ impl Context {
     }
   }
 
+  /// A child of exactly this scope, even while an effect inside it runs.
+  pub(crate) fn exact_child(&self) -> Self {
+    Self {
+      owner: self.owner.child(),
+    }
+  }
+
   /// Where things created through this context go: the current scope if it
   /// is inside this one (an effect re-running inside `self`), else `self`.
   fn target(&self) -> Rc<Owner> {

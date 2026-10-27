@@ -35,4 +35,4 @@ wasm-bindgen-test = "0.3"
 
 [dev-dependencies.web-sys]
 version = "0.3.64"
-features = ["EventInit", "HtmlInputElement", "MouseEvent", "MouseEventInit"]
+features = ["EventInit", "HtmlCollection", "HtmlInputElement", "MouseEvent", "MouseEventInit"]

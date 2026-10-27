@@ -5,7 +5,7 @@ use syn::{
   parse::{Parse, ParseStream},
   spanned::Spanned,
   token::Brace,
-  Expr, Ident, LitInt, LitStr, Token, Type,
+  Expr, Ident, LitInt, LitStr, Pat, Token, Type,
 };
 
 /// A `|a, b| expr` body: the names are cloned into the closure.
@@ -69,6 +69,41 @@ pub enum Node {
   /// `#text{ |sigs| expr }`
   ReactiveText(Reactive),
   Element(Element),
+  /// `if |sigs| cond { .. } else if cond { .. } else { .. }`
+  If {
+    captures: Vec<Ident>,
+    branches: Vec<(Expr, Vec<Node>)>,
+    otherwise: Option<Vec<Node>>,
+  },
+  /// `match |sigs| expr { pat if guard => { .. } }`
+  Match {
+    captures: Vec<Ident>,
+    expr: Box<Expr>,
+    arms: Vec<Arm>,
+  },
+  /// `for |sigs| pat in items, key = expr { .. }`
+  For {
+    captures: Vec<Ident>,
+    pat: Box<Pat>,
+    items: Box<Expr>,
+    key: Box<Expr>,
+    children: Vec<Node>,
+  },
+}
+
+pub struct Arm {
+  pub pat: Pat,
+  pub guard: Option<Expr>,
+  pub children: Vec<Node>,
+}
+
+impl Node {
+  pub fn is_control_flow(&self) -> bool {
+    matches!(
+      self,
+      Node::If { .. } | Node::Match { .. } | Node::For { .. }
+    )
+  }
 }
 
 impl Parse for Node {
@@ -119,6 +154,101 @@ impl Parse for Node {
       return Ok(Node::Expr(expr));
     }
 
+    if input.peek(Token![if]) {
+      input.parse::<Token![if]>()?;
+      let captures = parse_captures(input)?;
+      let mut branches = vec![(
+        Expr::parse_without_eager_brace(input)?,
+        parse_children(input)?,
+      )];
+      let mut otherwise = None;
+      while input.peek(Token![else]) {
+        input.parse::<Token![else]>()?;
+        if input.peek(Token![if]) {
+          input.parse::<Token![if]>()?;
+          if input.peek(Token![|]) || input.peek(Token![||]) {
+            return Err(
+              input.error("only the first `if` takes a capture list; it covers every branch"),
+            );
+          }
+          branches.push((
+            Expr::parse_without_eager_brace(input)?,
+            parse_children(input)?,
+          ));
+        } else {
+          otherwise = Some(parse_children(input)?);
+          break;
+        }
+      }
+      return Ok(Node::If {
+        captures,
+        branches,
+        otherwise,
+      });
+    }
+
+    if input.peek(Token![match]) {
+      input.parse::<Token![match]>()?;
+      let captures = parse_captures(input)?;
+      let expr = Expr::parse_without_eager_brace(input)?;
+      let content;
+      braced!(content in input);
+      let mut arms = Vec::new();
+      while !content.is_empty() {
+        let pat = Pat::parse_multi_with_leading_vert(&content)?;
+        let guard = if content.peek(Token![if]) {
+          content.parse::<Token![if]>()?;
+          Some(content.parse()?)
+        } else {
+          None
+        };
+        content.parse::<Token![=>]>()?;
+        if !content.peek(Brace) {
+          return Err(content.error("expected `{ .. }` with the arm's nodes"));
+        }
+        let children = parse_children(&content)?;
+        if content.peek(Token![,]) {
+          content.parse::<Token![,]>()?;
+        }
+        arms.push(Arm {
+          pat,
+          guard,
+          children,
+        });
+      }
+      return Ok(Node::Match {
+        captures,
+        expr: Box::new(expr),
+        arms,
+      });
+    }
+
+    if input.peek(Token![for]) {
+      input.parse::<Token![for]>()?;
+      let captures = parse_captures(input)?;
+      let pat = Pat::parse_single(input)?;
+      input.parse::<Token![in]>()?;
+      let items = Expr::parse_without_eager_brace(input)?;
+      let key_error = "a list needs a key: `for item in items, key = item.id { .. }`";
+      input
+        .parse::<Token![,]>()
+        .map_err(|err| syn::Error::new(err.span(), key_error))?;
+      let key_word = Ident::parse_any(input)?;
+      if key_word != "key" {
+        return Err(syn::Error::new(key_word.span(), key_error));
+      }
+      input.parse::<Token![=]>()?;
+      let key = Expr::parse_without_eager_brace(input)?;
+      let children = parse_children(input)?;
+      return Ok(Node::For {
+        captures,
+        pat: Box::new(pat),
+        items: Box::new(items),
+        key: Box::new(key),
+        children,
+      });
+    }
+
     Ok(Node::Element(input.parse()?))
   }
 }
@@ -140,13 +270,7 @@ impl Parse for Element {
       attrs.push(input.parse()?);
     }
     check_attrs(&attrs)?;
-
-    let content;
-    braced!(content in input);
-    let mut children = Vec::new();
-    while !content.is_empty() {
-      children.push(content.parse()?);
-    }
+    let children = parse_children(input)?;
     Ok(Element {
       name,
       span,
@@ -345,25 +469,42 @@ fn check_attrs(attrs: &[Attr]) -> syn::Result<()> {
   Ok(())
 }
 
-/// `|a, b| expr` (or `|| expr`) inside a `#{ }`.
-fn parse_reactive(content: ParseStream) -> syn::Result<Reactive> {
+fn parse_children(input: ParseStream) -> syn::Result<Vec<Node>> {
+  let content;
+  braced!(content in input);
+  let mut children = Vec::new();
+  while !content.is_empty() {
+    children.push(content.parse()?);
+  }
+  Ok(children)
+}
+
+/// An optional `|a, b|` before a control-flow expression.
+fn parse_captures(input: ParseStream) -> syn::Result<Vec<Ident>> {
   let mut captures = Vec::new();
-  if content.peek(Token![||]) {
-    content.parse::<Token![||]>()?;
-  } else if content.peek(Token![|]) {
-    content.parse::<Token![|]>()?;
-    while !content.peek(Token![|]) {
-      captures.push(content.parse::<Ident>()?);
-      if content.peek(Token![,]) {
-        content.parse::<Token![,]>()?;
-      } else if !content.peek(Token![|]) {
-        return Err(content.error("expected `,` or `|` in the capture list"));
+  if input.peek(Token![||]) {
+    input.parse::<Token![||]>()?;
+  } else if input.peek(Token![|]) {
+    input.parse::<Token![|]>()?;
+    while !input.peek(Token![|]) {
+      captures.push(input.parse::<Ident>()?);
+      if input.peek(Token![,]) {
+        input.parse::<Token![,]>()?;
+      } else if !input.peek(Token![|]) {
+        return Err(input.error("expected `,` or `|` in the capture list"));
       }
     }
-    content.parse::<Token![|]>()?;
-  } else {
+    input.parse::<Token![|]>()?;
+  }
+  Ok(captures)
+}
+
+/// `|a, b| expr` (or `|| expr`) inside a `#{ }`.
+fn parse_reactive(content: ParseStream) -> syn::Result<Reactive> {
+  if !(content.peek(Token![|]) || content.peek(Token![||])) {
     return Err(content.error("expected '|' to start signal list in reactive block"));
   }
+  let captures = parse_captures(content)?;
   let expr: TokenStream = content.parse()?;
   if expr.is_empty() {
     return Err(syn::Error::new(

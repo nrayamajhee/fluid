@@ -8,6 +8,7 @@ use wasm_bindgen::JsCast;
 use web_sys::EventTarget;
 
 pub mod dom;
+mod list;
 mod reactive;
 pub use dom::{listen, AttrValue, IntoNode, Listener, ListenerOptions};
 pub use reactive::{
@@ -64,8 +65,8 @@ pub fn on_animation_frame(mut closure: impl FnMut(f64) + 'static, fps: Option<f6
 #[doc(hidden)]
 pub mod __private {
   pub use crate::dom::{
-    append, dynamic, element, on, set_attribute, set_property, svg_element, text, toggle_class,
-    Child, ViaAsNode, ViaDisplay, ViaIntoNode, Wrap,
+    append, dynamic, each, element, fragment, on, set_attribute, set_property, svg_element, switch,
+    text, toggle_class, Branch, Child, ViaAsNode, ViaDisplay, ViaIntoNode, Wrap,
   };
   pub use wasm_bindgen;
   pub use web_sys;

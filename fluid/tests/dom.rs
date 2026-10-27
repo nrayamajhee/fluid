@@ -237,3 +237,139 @@ fn listen_returns_a_removable_listener() {
   ping();
   assert_eq!(seen.get(), 2);
 }
+
+#[wasm_bindgen_test]
+fn if_swaps_branches_and_disposes_the_old_one() {
+  let open = signal(false);
+  let count = signal(0);
+  let runs = Rc::new(Cell::new(0));
+  let el = {
+    let runs = runs.clone();
+    html! {
+      div {
+        "["
+        if |open, count, runs| open.value() {
+          b { #text{ |count| { runs.set(runs.get() + 1); count.value() } } }
+        } else if count.value() > 10 {
+          "big"
+        } else {
+          i { "closed" }
+        }
+        "]"
+      }
+    }
+  };
+  assert_eq!(el.inner_html(), "[<i>closed</i>]");
+  count.set(1);
+  assert_eq!(el.inner_html(), "[<i>closed</i>]", "same branch is kept");
+  open.set(true);
+  assert_eq!(el.inner_html(), "[<b>1</b>]");
+  count.set(2);
+  assert_eq!(el.inner_html(), "[<b>2</b>]");
+  let before = runs.get();
+  open.set(false);
+  count.set(3);
+  assert_eq!(runs.get(), before, "the closed branch's effect is disposed");
+  count.set(11);
+  assert_eq!(el.inner_html(), "[big]");
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+  Idle,
+  Playing(u8),
+}
+
+#[wasm_bindgen_test]
+fn match_rebuilds_on_arm_or_bound_value_changes() {
+  let mode = signal(Mode::Idle);
+  let el = html! {
+    p {
+      match |mode| mode.value() {
+        Mode::Idle => { "idle" }
+        Mode::Playing(n) if n > 5 => { b { "loud " { n } } }
+        Mode::Playing(n) => { "playing " { n } }
+      }
+    }
+  };
+  assert_eq!(el.inner_html(), "idle");
+  mode.set(Mode::Playing(2));
+  assert_eq!(el.inner_html(), "playing 2");
+  mode.set(Mode::Playing(3));
+  assert_eq!(el.inner_html(), "playing 3");
+  mode.set(Mode::Playing(9));
+  assert_eq!(el.inner_html(), "<b>loud 9</b>");
+}
+
+#[derive(Clone)]
+struct Todo {
+  id: u32,
+  title: &'static str,
+}
+
+#[wasm_bindgen_test]
+fn keyed_for_moves_rows_instead_of_rebuilding() {
+  let todo = |id, title| Todo { id, title };
+  let todos = signal(vec![todo(1, "a"), todo(2, "b"), todo(3, "c")]);
+  let built = Rc::new(Cell::new(0));
+  let el = {
+    let built = built.clone();
+    html! {
+      ul {
+        li { "head" }
+        for |todos, built| todo in todos.cloned(), key = todo.id {
+          li { { built.set(built.get() + 1); todo.title } }
+        }
+        li { "tail" }
+      }
+    }
+  };
+  let titles = || el.text_content().unwrap();
+  assert_eq!(titles(), "headabctail");
+  let b = el.children().item(2).unwrap();
+
+  todos.set(vec![todo(3, "c"), todo(2, "b"), todo(1, "a")]);
+  assert_eq!(titles(), "headcbatail");
+  assert_eq!(built.get(), 3, "moved, not rebuilt");
+  assert!(el.children().item(2).unwrap().is_same_node(Some(&b)));
+
+  todos.update(|todos| {
+    todos.remove(1);
+    todos.push(todo(4, "d"));
+    todos.push(todo(4, "duplicate"));
+  });
+  assert_eq!(titles(), "headcadtail");
+  assert_eq!(built.get(), 4);
+
+  todos.set(Vec::new());
+  assert_eq!(titles(), "headtail");
+  todos.set(vec![todo(5, "e")]);
+  assert_eq!(titles(), "headetail");
+}
+
+#[wasm_bindgen_test]
+fn rows_own_their_effects() {
+  let items = signal(vec![1u32, 2]);
+  let tick = signal(0);
+  let runs = Rc::new(Cell::new(0));
+  let el = {
+    let runs = runs.clone();
+    html! {
+      div {
+        for |items, runs| item in items.cloned(), key = *item {
+          span { #text{ |tick| { runs.set(runs.get() + 1); format!("{item}:{}", tick.value()) } } }
+        }
+      }
+    }
+  };
+  assert_eq!(el.text_content().unwrap(), "1:02:0");
+  items.set(vec![2]);
+  let before = runs.get();
+  tick.set(1);
+  assert_eq!(
+    runs.get(),
+    before + 1,
+    "only the remaining row's effect runs"
+  );
+  assert_eq!(el.text_content().unwrap(), "2:1");
+}
