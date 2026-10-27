@@ -32,11 +32,15 @@ gloo_utils::body().append_child(&page)?;
 
 ## Example
 
-[`fluid-example`](fluid-example/src/main.rs) is a one-page tour; each
-section is one function. It is styled with Tailwind CSS, which
-[Trunk](https://trunkrs.dev) builds from
-[`src/tailwind.css`](fluid-example/src/tailwind.css) (Trunk downloads the
-Tailwind CLI version pinned in `Trunk.toml`):
+[`fluid-example`](fluid-example/src/main.rs) is a todo list with filters,
+about 200 lines. It uses signals, a memo, `batch`, a store shared through
+context, components, keyed `for`, `if`/`else` with a `match` inside,
+`#text`, `prop:` and `class:` bindings, a typed `@submit.prevent` handler
+and an inline SVG icon.
+
+It is styled with Tailwind CSS, which [Trunk](https://trunkrs.dev) builds
+from [`src/tailwind.css`](fluid-example/src/tailwind.css) (Trunk downloads
+the Tailwind version pinned in `Trunk.toml`):
 
 ```sh
 cargo install trunk
@@ -44,19 +48,8 @@ cd fluid-example && trunk serve
 ```
 
 Tailwind finds classes by scanning the Rust sources, so write each class
-name out whole. State-dependent classes are a good fit for toggles:
+name out whole. State-dependent classes fit toggles:
 `class="flex gap-3" class:"text-slate-400 line-through"=#{ |done| done.value() }`.
-
-| section      | shows                                                                                                                                                |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Counter**  | the original `class=#{ \|counter\| .. }` syntax, `#text` nodes, a memo, a typed `MouseEvent` handler                                                   |
-| **Todos**    | keyed `for`, `if`/`else if`/`else`, a store from `use_context`, `batch`, memos, `prop:value`/`prop:checked`, `class:done`, a reactive `disabled`, an inline SVG icon |
-| **Level**    | `match` with bindings and a guard, `@wheel.nonpassive.prevent`, `aria-*` attributes, an `Option` attribute (`title`), reactive SVG attributes, `set_if_changed`, a window listener from `fluid::listen(..).owned()` |
-| **Scopes**   | a stopwatch inside an `if` branch: hiding it disposes its effects and runs its `on_cleanup` (stopping its timer); `untrack`                           |
-| **Children** | an `IntoNode` component, `Vec` and `Option` children, numbers, escaped text, `#html` raw HTML, a `{ move \|\| .. }` closure child                        |
-
-The whole page is built inside `ctx.run(..)`, so everything on it belongs to
-one scope.
 
 ## Signals, effects and memos
 
@@ -249,9 +242,9 @@ Also kept: `fluid::add_event_and_forget`, `fluid::now()` and
 ## Testing
 
 fluid's only tests are component tests of the example
-([`fluid-example/src/tests.rs`](fluid-example/src/tests.rs)): each section is
-mounted on its own in headless Chrome and driven like a user would (typing,
-clicking, scrolling, keys), then the DOM is checked.
+([`fluid-example/src/tests.rs`](fluid-example/src/tests.rs)): the app is
+mounted in headless Chrome and driven like a user would (typing, clicking,
+submitting), then the DOM is checked.
 
 ```sh
 cargo test -p fluid-example --target wasm32-unknown-unknown

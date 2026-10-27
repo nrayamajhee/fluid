@@ -399,11 +399,11 @@ README + example updates, clippy/fmt clean.
 ### Tests
 
 fluid is tested only through its example: `fluid-example/src/tests.rs`
-mounts each section of the example (Counter, Todos, Level, Scopes,
-Children) in headless Chromium and drives it as a user would, checking the
-DOM. Each phase is covered by the sections that use it: signals, memos and
-`batch` by Counter and Todos; scopes, cleanups and listener removal by
-Scopes and Level; the `html!` grammar and control flow by all of them.
+mounts the todo app in headless Chromium and drives it as a user would
+(adding, completing, filtering, clearing, removing), checking the DOM. That
+covers signals, the memo and `batch`; context values and component scopes;
+the `html!` attribute, event and child forms; and `if`, `match` and keyed
+`for`, including that a keyed row keeps its DOM node.
 
 ### (f) Later / not in this PR
 

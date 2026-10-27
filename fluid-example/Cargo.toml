@@ -4,40 +4,13 @@ version = "0.1.0"
 authors = ["nrayamajhee <nishan@rayamajhee.com>"]
 edition = "2021"
 
-[dependencies.web-sys]
-version = "0.3.64"
-features = [
-	"DedicatedWorkerGlobalScope",
-	"ErrorEvent",
-	"Event",
-	"Navigator",
-  "Worker",
-  "MessageEvent",
-	"Window",
-	"Document",
-	"Element",
-	"HtmlElement",
-	"HtmlInputElement",
-	"KeyboardEvent",
-	"MouseEvent",
-	"Node",
-	"WheelEvent",
-]
-
 [dependencies]
-wasm-bindgen = "0.2.87"
-wasm-bindgen-futures = "0.4.37"
-js-sys = "0.3.64"
 fluid = { path = "../fluid" }
 fluid-macro = { path = "../fluid-macro" }
-gloo-console = "0.3.0"
 gloo-utils = "0.2.0"
-gloo-timers = "0.3.0"
+wasm-bindgen = "0.2.87"
+web-sys = { version = "0.3.64", features = ["Element", "Event", "EventTarget", "HtmlInputElement"] }
 
 [dev-dependencies]
-gloo-timers = { version = "0.3.0", features = ["futures"] }
 wasm-bindgen-test = "0.3"
-
-[dev-dependencies.web-sys]
-version = "0.3.64"
-features = ["EventInit", "KeyboardEventInit", "MouseEventInit", "NodeList", "WheelEventInit"]
+web-sys = { version = "0.3.64", features = ["EventInit", "HtmlElement", "NodeList"] }
